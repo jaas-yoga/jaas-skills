@@ -16,7 +16,11 @@ from pathlib import Path
 from jaas_registry.authn.models import Membership, Tenant, TenantKind, TenantRole
 
 
-def _personal_tenant_id(user_id: str) -> str:
+def personal_tenant_id(user_id: str) -> str:
+    """Public so callers that need the id without touching the store can
+    compute it too (e.g. index/demo_seed.py, which needs an owner_tenant
+    before that user has ever actually signed in and had the tenant
+    created)."""
     return f"tnt_personal_{user_id.removeprefix('usr_')}"
 
 
@@ -41,7 +45,7 @@ class TenantStore:
         return tenant
 
     def ensure_personal_tenant(self, *, user_id: str, display_name: str) -> Tenant:
-        tenant_id = _personal_tenant_id(user_id)
+        tenant_id = personal_tenant_id(user_id)
         existing = self.get(tenant_id)
         if existing is not None:
             return existing

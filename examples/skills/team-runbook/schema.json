@@ -1,0 +1,32 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "incidentSummary": {
+        "type": "string",
+        "description": "One-line description of what's going wrong, e.g. 'checkout API returning 500s'."
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["sev1", "sev2", "sev3"],
+        "description": "Initial severity assessment, per the checklist's step 2."
+      }
+    },
+    "required": ["incidentSummary"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "What was done, in one or two sentences."
+      },
+      "checklistCompleted": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Which runbook steps were completed, in order."
+      }
+    },
+    "required": ["summary"]
+  }
+}

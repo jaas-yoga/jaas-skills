@@ -1,0 +1,19 @@
+apiVersion: v1
+id: jaas.demo.personal-notes
+name: Personal Notes
+version: 1.0.0
+description: >-
+  Jots down a quick freeform note under a topic and lists what's already
+  been noted — a small private scratchpad skill, not meant to be shared.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: productivity
+tags:
+  - demo
+  - personal
+  - notes
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

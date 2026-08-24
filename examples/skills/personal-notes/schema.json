@@ -1,0 +1,30 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "description": "What the note is about, e.g. 'onboarding-todo' or 'ideas'."
+      },
+      "note": {
+        "type": "string",
+        "description": "The freeform text to record under that topic."
+      }
+    },
+    "required": ["topic", "note"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "Confirmation of what was recorded, in one sentence."
+      },
+      "topicNoteCount": {
+        "type": "integer",
+        "description": "How many notes now exist under this topic, including this one."
+      }
+    },
+    "required": ["summary"]
+  }
+}

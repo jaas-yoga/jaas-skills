@@ -1,0 +1,20 @@
+apiVersion: v1
+id: jaas.demo.team-runbook
+name: Team Runbook
+version: 1.0.0
+description: >-
+  Walks through this (example) team's on-call incident checklist —
+  acknowledge, assess severity, mitigate, then write up a postmortem.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: operations
+tags:
+  - demo
+  - team
+  - runbook
+  - incident-response
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

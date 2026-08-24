@@ -420,9 +420,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from jaas_registry.api.app import create_app
+    from jaas_registry.artifact.signing import load_or_create_keypair
+    from jaas_registry.artifact.trust import ensure_key_registered, load_trust_policy
     from jaas_registry.authz.policy import build_authorizer_from_settings
     from jaas_registry.common.config import load_settings
     from jaas_registry.index.bootstrap import bootstrap_index
+    from jaas_registry.index.demo_seed import seed_demo_skills
     from jaas_registry.observability.logging import configure_logging
     from jaas_registry.observability.tracing import build_tracer
     from jaas_registry.storage.local_filesystem import LocalFilesystemStore
@@ -433,6 +436,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
     tracer = build_tracer(batch=True)
     store = LocalFilesystemStore(settings.storage_root, tracer=tracer)
     index = bootstrap_index(store)
+
+    # Same signing key api/draft_routes.py's publish path and jaasctl
+    # publish both use (settings.policy_dir/signing_key.pem) — a fresh
+    # checkout has none yet, so this also doubles as first-run key
+    # generation, same as cmd_publish already does.
+    keypair = load_or_create_keypair(settings.policy_dir / "signing_key.pem")
+    ensure_key_registered(settings.policy_dir, keypair.public_key_pem())
+    trust_policy = load_trust_policy(settings.policy_dir)
+    seed_demo_skills(index=index, store=store, signing_key=keypair, trust_policy=trust_policy)
+
     authorizer = build_authorizer_from_settings(settings)
 
     app = create_app(
