@@ -1,0 +1,132 @@
+{
+  "$defs": {
+    "Owner": {
+      "properties": {
+        "contact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact"
+        },
+        "team": {
+          "title": "Team",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "title": "Owner",
+      "type": "object"
+    },
+    "RuntimeCompatibility": {
+      "properties": {
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "versionRange": {
+          "title": "Versionrange",
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "versionRange"
+      ],
+      "title": "RuntimeCompatibility",
+      "type": "object"
+    }
+  },
+  "description": "manifest.yaml",
+  "properties": {
+    "apiVersion": {
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Digest"
+    },
+    "entrypoint": {
+      "title": "Entrypoint",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "owner": {
+      "$ref": "#/$defs/Owner"
+    },
+    "runtime": {
+      "items": {
+        "$ref": "#/$defs/RuntimeCompatibility"
+      },
+      "title": "Runtime",
+      "type": "array"
+    },
+    "signature": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Signature"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "id",
+    "name",
+    "version",
+    "description",
+    "owner",
+    "entrypoint",
+    "category",
+    "runtime"
+  ],
+  "title": "ManifestDocument",
+  "type": "object"
+}
