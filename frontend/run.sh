@@ -26,14 +26,14 @@ cd "$SCRIPT_DIR"
 RUN_DIR="$SCRIPT_DIR/.run"
 NEXT_BIN="$SCRIPT_DIR/node_modules/.bin/next"
 
-# The backend and guardrails service are genuinely separate codebases
-# (their own repos, own dependency managers, own deploys) — this is only a
-# local-dev convenience for running the whole stack together from here.
-# Both default to sibling checkouts; override if yours live elsewhere, or
-# skip starting one by setting its DIR var to "".
-BACKEND_DIR="${RUNE_BACKEND_DIR-$SCRIPT_DIR/../rune_skills}"
+# The backend is this monorepo's own sibling directory (backend/); the
+# guardrails service is a genuinely separate codebase (its own repo, own
+# dependency manager, own deploy) that defaults to a checkout alongside
+# this monorepo — override either if yours lives elsewhere, or skip
+# starting one by setting its DIR var to "".
+BACKEND_DIR="${RUNE_BACKEND_DIR-$SCRIPT_DIR/../backend}"
 RUNECTL="$BACKEND_DIR/.venv/bin/runectl"
-GUARDRAILS_DIR="${RUNE_GUARDRAILS_DIR-$SCRIPT_DIR/../rune_guardrail}"
+GUARDRAILS_DIR="${RUNE_GUARDRAILS_DIR-$SCRIPT_DIR/../../rune_guardrail}"
 GUARDRAILS_BIN="$GUARDRAILS_DIR/.venv/bin/rune-guardrails"
 
 WEB_HOST="${RUNE_WEB_HOST:-0.0.0.0}"
@@ -77,10 +77,12 @@ Usage: $(basename "$0") [start|stop|restart|status|logs [api|web|guardrails]]
 
 Environment overrides:
   RUNE_BACKEND_DIR   path to the rune-registry backend repo (default:
-                     ../rune_skills, a sibling checkout). Set to "" to skip
-                     starting the api — see also RUNE_API_URL in .env.local.
+                     ../backend, this monorepo's own backend/). Set to ""
+                     to skip starting the api — see also RUNE_API_URL in
+                     .env.local.
   RUNE_GUARDRAILS_DIR   path to the standalone rune-guardrails service repo
-                        (default: ../rune_guardrail, a sibling checkout).
+                        (default: ../../rune_guardrail, a checkout
+                        alongside this monorepo).
                         Set to "" to skip starting it — the API degrades
                         gracefully (503 only on the specific routes that
                         need it) rather than failing to start.

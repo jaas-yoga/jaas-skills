@@ -31,9 +31,10 @@ RUNECTL="$SCRIPT_DIR/.venv/bin/runectl"
 
 # The guardrails service is a genuinely separate codebase (its own repo,
 # own pyproject.toml, own deploy) — this is only a local-dev convenience
-# for running both together. Defaults to a sibling checkout; override if
-# yours lives elsewhere, or skip starting it if RUNE_GUARDRAILS_DIR="".
-GUARDRAILS_DIR="${RUNE_GUARDRAILS_DIR-$SCRIPT_DIR/../rune_guardrail}"
+# for running both together. Defaults to a checkout alongside this
+# monorepo (one level up from backend/); override if yours lives
+# elsewhere, or skip starting it if RUNE_GUARDRAILS_DIR="".
+GUARDRAILS_DIR="${RUNE_GUARDRAILS_DIR-$SCRIPT_DIR/../../rune_guardrail}"
 GUARDRAILS_BIN="$GUARDRAILS_DIR/.venv/bin/rune-guardrails"
 
 API_HOST="${RUNE_HOST:-127.0.0.1}"
@@ -70,7 +71,8 @@ Environment overrides:
   RUNE_HOST          api host to bind (default 127.0.0.1)
   RUNE_PORT          api port to bind (default 8027)
   RUNE_GUARDRAILS_DIR   path to the standalone rune-guardrails service repo
-                        (default: ../rune_guardrail, a sibling checkout).
+                        (default: ../../rune_guardrail, a checkout
+                        alongside this monorepo).
                         Set to "" to skip starting it — the API degrades
                         gracefully (503 only on the specific routes that
                         need it) rather than failing to start.
