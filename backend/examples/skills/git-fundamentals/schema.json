@@ -1,0 +1,32 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "task": {
+        "type": "string",
+        "description": "What to do, in plain language, e.g. 'rebase this branch onto main' or 'recover a commit I reset away'."
+      }
+    },
+    "required": ["task"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "What the agent did, in one or two sentences."
+      },
+      "commandsRun": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "The exact git commands executed, in order."
+      },
+      "warnings": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Anything risky that was flagged before acting (e.g. a force-push, a discarded stash)."
+      }
+    },
+    "required": ["summary"]
+  }
+}

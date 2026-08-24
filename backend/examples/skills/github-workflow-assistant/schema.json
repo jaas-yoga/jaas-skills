@@ -1,0 +1,35 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "task": {
+        "type": "string",
+        "description": "What to do, in plain language, e.g. 'open a PR for this branch' or 'triage issue #42'."
+      },
+      "repo": {
+        "type": "string",
+        "description": "owner/repo slug, if not already implied by the current working directory's git remote."
+      }
+    },
+    "required": ["task"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "What the agent did, in one or two sentences."
+      },
+      "actionsTaken": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Ordered list of concrete steps performed (commands run, URLs created)."
+      },
+      "url": {
+        "type": "string",
+        "description": "Link to the created/updated PR or issue, if any."
+      }
+    },
+    "required": ["summary"]
+  }
+}

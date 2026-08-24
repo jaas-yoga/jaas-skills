@@ -1,0 +1,28 @@
+{
+  "$defs": {
+    "DependencyDeclaration": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "versionConstraint": {
+          "title": "Versionconstraint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "versionConstraint"
+      ],
+      "title": "DependencyDeclaration",
+      "type": "object"
+    }
+  },
+  "description": "dependencies.yaml \u2014 a flat list of {id, versionConstraint} entries.",
+  "items": {
+    "$ref": "#/$defs/DependencyDeclaration"
+  },
+  "title": "DependenciesDocument",
+  "type": "array"
+}

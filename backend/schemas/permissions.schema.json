@@ -1,0 +1,8 @@
+{
+  "description": "permissions.yaml \u2014 a flat list of permission scope strings.",
+  "items": {
+    "type": "string"
+  },
+  "title": "PermissionsDocument",
+  "type": "array"
+}

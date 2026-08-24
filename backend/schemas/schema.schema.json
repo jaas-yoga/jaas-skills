@@ -1,0 +1,21 @@
+{
+  "description": "schema.json \u2014 the skill's own input/output contract, each a JSON Schema document.",
+  "properties": {
+    "inputs": {
+      "additionalProperties": true,
+      "title": "Inputs",
+      "type": "object"
+    },
+    "outputs": {
+      "additionalProperties": true,
+      "title": "Outputs",
+      "type": "object"
+    }
+  },
+  "required": [
+    "inputs",
+    "outputs"
+  ],
+  "title": "IoSchemaDocument",
+  "type": "object"
+}

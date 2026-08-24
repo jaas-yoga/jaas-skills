@@ -1,0 +1,137 @@
+# Reference GitHub Actions workflow for a skill's own git repo (one repo
+# per skill — see README.md). Not wired into this app's own CI; copy it
+# into a skill repo's .github/workflows/ and adjust RUNE_API_URL.
+#
+# If instead one repo hosts several skills, each in its own subdirectory,
+# point `runectl release` at that subdirectory (e.g. `runectl release
+# jira.create_ticket ...` instead of `runectl release . ...` below) —
+# everything else about this workflow is unchanged. `runectl release`
+# auto-detects the directory's path relative to the repo root (via `git
+# rev-parse --show-prefix`) and records it, so the registry's "browse full
+# source at this tag" feature on the published skill page shows only that
+# skill's own files, not every skill in the repo.
+#
+# Two jobs, matching the two-stage gate design.md/ROLLOUT.md describe:
+#
+#   validate  — runs on every PR. Fast, warn-level feedback: `runectl
+#               validate` prints WARN lines for non-blocking guardrail
+#               findings but only fails the check (and therefore blocks
+#               merge, if this is set as a required status check in the
+#               repo's branch protection settings — see the note at the
+#               bottom) on a mandatory BLOCK finding or a structural
+#               validation error.
+#
+#   release   — runs only on a pushed tag matching v*.*.*. Uses GitHub
+#               Actions OIDC (no stored secret) to authenticate to the
+#               registry and calls `runectl release`, which always
+#               enforces guardrails — there is no opt-out on this path.
+#
+# Prerequisite: a tenant admin must register this repo for the skill's id
+# before the release job can succeed the first time —
+# POST /api/v1/tenants/{tenantId}/repo-links {"skillId": "...", "repoUrl": "..."}
+# (or via the tenant settings UI). Until that exists, `runectl release`
+# fails with REPO_LINK_REQUIRED, not a silent success.
+#
+# Optional: multiple release lines. If the tenant admin restricted the
+# repo link's `releaseBranches` (e.g. to ["main", "staging"]), each job
+# releasing under one of those must declare `environment: <name>`
+# matching one of them — see the `release-staging` job below. The OIDC
+# token then carries that name as its `environment` claim, which is what
+# the registry actually checks; we never try to infer "which branch is
+# this tag on" ourselves, since a git tag isn't reliably "on" one branch.
+# Restrict who can trigger that job for real by configuring the
+# environment's deployment branch/tag policy under this repo's
+# Settings > Environments — that's the actual enforcement point, this
+# workflow file alone can't provide it.
+
+name: JaaS Skills CI
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  RUNE_API_URL: https://registry.example.com # set to your real deployment
+  RUNE_GUARDRAILS_SERVICE_URL: https://guardrails.example.com
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+      - run: uv run runectl validate .
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required to request an OIDC token
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+
+      # actions/github-script exposes core.getIDToken(audience) — the
+      # audience string here must exactly match the registry's configured
+      # RUNE_RELEASE_OIDC_AUDIENCE (default "rune-registry").
+      - name: Request OIDC token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('rune-registry');
+            core.setOutput('token', token);
+
+      - name: Release
+        run: |
+          uv run runectl release . \
+            --tag "${{ github.ref_name }}" \
+            --oidc-token "${{ steps.oidc.outputs.token }}" \
+            --api-url "$RUNE_API_URL" \
+            --ci-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  # Only needed if this repo's link restricts releases to specific branches
+  # (releaseBranches on the repo link). Otherwise delete this job — the
+  # `release` job above already covers the unrestricted, single-line case.
+  release-staging:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: staging # must match a name in the repo link's releaseBranches
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+
+      - name: Request OIDC token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('rune-registry');
+            core.setOutput('token', token);
+
+      - name: Release
+        run: |
+          uv run runectl release . \
+            --tag "${{ github.ref_name }}" \
+            --oidc-token "${{ steps.oidc.outputs.token }}" \
+            --api-url "$RUNE_API_URL" \
+            --ci-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+# Recommended branch protection for this repo (Settings > Branches — the
+# platform can't enforce this from its side, it's entirely a GitHub repo
+# setting): require the `validate` check to pass and require at least one
+# approving review before a PR can merge to the default branch. This is
+# what makes the "warn-level PR feedback, enforced release gate" split
+# actually mean something — without a required review, a mandatory-BLOCK
+# finding is the only thing stopping a bad merge; without the required
+# check, even that goes away.

@@ -1,0 +1,23 @@
+apiVersion: v1
+id: rune.devtools.git-fundamentals
+name: Git Fundamentals
+version: 1.2.0
+description: >-
+  Core version-control operations independent of any hosting platform:
+  branching, commit hygiene, merge vs. rebase, stashing, cherry-picking,
+  tagging, and recovering from mistakes via reflog.
+owner:
+  team: rune-registry-examples
+  contact: examples@rune-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - git
+  - version-control
+  - branching
+  - merge
+  - rebase
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"
