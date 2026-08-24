@@ -1,6 +1,6 @@
 import pytest
 
-from rune_registry.artifact.packaging import (
+from jaas_registry.artifact.packaging import (
     DEFAULT_PACKAGE_FILE_CONTENTS,
     build_normalized_archive,
     collect_package_files,

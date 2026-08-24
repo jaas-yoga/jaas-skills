@@ -1,5 +1,5 @@
 apiVersion: v1
-id: rune.devtools.git-fundamentals
+id: jaas.devtools.git-fundamentals
 name: Git Fundamentals
 version: 1.2.0
 description: >-
@@ -7,8 +7,8 @@ description: >-
   branching, commit hygiene, merge vs. rebase, stashing, cherry-picking,
   tagging, and recovering from mistakes via reflog.
 owner:
-  team: rune-registry-examples
-  contact: examples@rune-registry.local
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
 entrypoint: SKILL.md
 category: developer-tools
 tags:

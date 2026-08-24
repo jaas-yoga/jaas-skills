@@ -1,4 +1,4 @@
-from rune_registry.index.models import IndexEntry
+from jaas_registry.index.models import IndexEntry
 
 
 def make_entry(**overrides) -> IndexEntry:

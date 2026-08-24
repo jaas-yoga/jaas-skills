@@ -1,4 +1,4 @@
-from rune_registry.index.runtime_filter import runtime_matches
+from jaas_registry.index.runtime_filter import runtime_matches
 from tests.fixtures.index_entries import make_entry
 
 

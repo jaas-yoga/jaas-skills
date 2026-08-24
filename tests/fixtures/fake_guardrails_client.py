@@ -1,6 +1,6 @@
 """Test double for guardrails.client.GuardrailsClient.
 
-This app's tests never execute the real rune-guardrails service's code —
+This app's tests never execute the real jaas-guardrails service's code —
 that service has its own, separate test suite in its own repo. This fake
 only verifies *wiring*: does a blocking finding stop a publish, does a
 warning get recorded on the audit event, does the tenant policy's enabled
@@ -10,7 +10,7 @@ GuardrailScanResult it wants back.
 
 from __future__ import annotations
 
-from rune_registry.guardrails.models import (
+from jaas_registry.guardrails.models import (
     GuardrailDefinition,
     GuardrailLevel,
     GuardrailScanResult,

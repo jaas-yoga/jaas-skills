@@ -1,5 +1,5 @@
-from rune_registry.authn.invites import InviteStore
-from rune_registry.authn.models import TenantRole
+from jaas_registry.authn.invites import InviteStore
+from jaas_registry.authn.models import TenantRole
 
 
 def test_create_and_list_for_tenant(tmp_path):

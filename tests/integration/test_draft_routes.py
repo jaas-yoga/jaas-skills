@@ -8,18 +8,18 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.config import Settings
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
-from rune_registry.index.models import Visibility
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.config import Settings
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
+from jaas_registry.index.models import Visibility
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_github_client import FakeGitHubApiClient
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.index_entries import make_entry
@@ -348,7 +348,7 @@ class TestDraftValidation:
 
 
 class TestSkillGuardrailsConfig:
-    """A draft's own .rune/guardrails.yaml (guardrails/skill_config.py)
+    """A draft's own .jaas/guardrails.yaml (guardrails/skill_config.py)
     applies tenant custom rules on top of the tenant's baseline policy —
     exercised here through both /validate and /publish, the same two
     call sites that already enforce the baseline policy itself."""
@@ -373,7 +373,7 @@ class TestSkillGuardrailsConfig:
         _fill_valid_draft(client, draft_id, token)
         self._seed_custom_rule(client)
         client.put(
-            f"/api/v1/drafts/{draft_id}/files/.rune/guardrails.yaml",
+            f"/api/v1/drafts/{draft_id}/files/.jaas/guardrails.yaml",
             json={"content": "apply:\n  - custom:tnt_owner:no-todo\n"},
             headers=_auth(token),
         )
@@ -391,7 +391,7 @@ class TestSkillGuardrailsConfig:
         _fill_valid_draft(client, draft_id, token)
         self._seed_custom_rule(client)
         client.put(
-            f"/api/v1/drafts/{draft_id}/files/.rune/guardrails.yaml",
+            f"/api/v1/drafts/{draft_id}/files/.jaas/guardrails.yaml",
             json={"content": "apply:\n  - custom:tnt_owner:no-todo\n"},
             headers=_auth(token),
         )
@@ -412,7 +412,7 @@ class TestSkillGuardrailsConfig:
         draft_id = client.post("/api/v1/drafts", json={}, headers=_auth(token)).json()["id"]
         _fill_valid_draft(client, draft_id, token)
         client.put(
-            f"/api/v1/drafts/{draft_id}/files/.rune/guardrails.yaml",
+            f"/api/v1/drafts/{draft_id}/files/.jaas/guardrails.yaml",
             json={"content": "apply:\n  - custom:tnt_owner:does-not-exist\n"},
             headers=_auth(token),
         )
@@ -592,7 +592,7 @@ class TestDraftGitIntegration:
         git_client,
         fake_github_client,
         *,
-        working_branch="rune/draft/wb",
+        working_branch="jaas/draft/wb",
         token=None,
         register_repo=True,
     ):
@@ -634,7 +634,7 @@ class TestDraftGitIntegration:
                     "provider": "github",
                     "repoUrl": "https://github.com/acme/tool-x",
                     "targetBranch": "main",
-                    "workingBranch": "rune/draft/wb",
+                    "workingBranch": "jaas/draft/wb",
                 }
             },
             headers=_auth(token),
@@ -659,7 +659,7 @@ class TestDraftGitIntegration:
                     "provider": "github",
                     "repoUrl": "https://github.com/acme/tool-x",
                     "targetBranch": "main",
-                    "workingBranch": "rune/draft/wb",
+                    "workingBranch": "jaas/draft/wb",
                     "confirmInitializeEmptyRepo": True,
                 }
             },
@@ -668,11 +668,11 @@ class TestDraftGitIntegration:
 
         assert resp.status_code == 200, resp.text
         assert "main" in fake_github_client.branches
-        assert "rune/draft/wb" in fake_github_client.branches
+        assert "jaas/draft/wb" in fake_github_client.branches
         # working_branch has the seed-file commit on top of the shared
         # root commit; target_branch stays at the bare root commit until
         # publish merges into it — they're expected to diverge here.
-        tree = fake_github_client.file_contents["rune/draft/wb"]
+        tree = fake_github_client.file_contents["jaas/draft/wb"]
         assert tree[f"{_STARTER_SKILL_DIR}/manifest.yaml"]
 
     def test_create_creates_working_branch_and_seed_commit(
@@ -685,11 +685,11 @@ class TestDraftGitIntegration:
         assert body["provider"] == "github"
         assert body["repoUrl"] == "https://github.com/acme/tool-x"
         assert body["targetBranch"] == "main"
-        assert body["workingBranch"] == "rune/draft/wb"
+        assert body["workingBranch"] == "jaas/draft/wb"
         assert body["gitSyncStatus"] == "synced"
         assert body["gitSubdirectory"] == _STARTER_SKILL_DIR
-        assert "rune/draft/wb" in fake_github_client.branches
-        tree = fake_github_client.file_contents["rune/draft/wb"]
+        assert "jaas/draft/wb" in fake_github_client.branches
+        tree = fake_github_client.file_contents["jaas/draft/wb"]
         assert tree[f"{_STARTER_SKILL_DIR}/manifest.yaml"]
 
     def test_create_rolls_back_when_github_not_connected(self, git_client, fake_github_client):
@@ -703,7 +703,7 @@ class TestDraftGitIntegration:
         assert git_client.get("/api/v1/drafts", headers=_auth(outsider_token)).json() == []
 
     def test_create_rolls_back_on_branch_name_collision(self, git_client, fake_github_client):
-        fake_github_client.seed_branch("rune/draft/wb")
+        fake_github_client.seed_branch("jaas/draft/wb")
 
         resp, token = self._create_git_draft(git_client, fake_github_client)
 
@@ -724,7 +724,7 @@ class TestDraftGitIntegration:
         assert put_resp.status_code == 200
         assert put_resp.json()["gitSyncStatus"] == "synced"
         assert (
-            fake_github_client.file_contents["rune/draft/wb"][f"{_STARTER_SKILL_DIR}/manifest.yaml"]
+            fake_github_client.file_contents["jaas/draft/wb"][f"{_STARTER_SKILL_DIR}/manifest.yaml"]
             == b"id: acme.text.foo\n"
         )
 
@@ -733,7 +733,7 @@ class TestDraftGitIntegration:
     ):
         resp, token = self._create_git_draft(git_client, fake_github_client)
         draft_id = resp.json()["id"]
-        fake_github_client.fail_commit_with = RuneError(
+        fake_github_client.fail_commit_with = JaasError(
             ErrorCode.GITHUB_API_ERROR, "rate limited"
         )
 
@@ -756,7 +756,7 @@ class TestDraftGitIntegration:
     ):
         resp, token = self._create_git_draft(git_client, fake_github_client)
         draft_id = resp.json()["id"]
-        seeded_content = fake_github_client.file_contents["rune/draft/wb"][
+        seeded_content = fake_github_client.file_contents["jaas/draft/wb"][
             f"{_STARTER_SKILL_DIR}/manifest.yaml"
         ]
         commits_before = len(fake_github_client.commit_log)
@@ -770,7 +770,7 @@ class TestDraftGitIntegration:
         assert put_resp.status_code == 200
         assert len(fake_github_client.commit_log) == commits_before
         assert (
-            fake_github_client.file_contents["rune/draft/wb"][f"{_STARTER_SKILL_DIR}/manifest.yaml"]
+            fake_github_client.file_contents["jaas/draft/wb"][f"{_STARTER_SKILL_DIR}/manifest.yaml"]
             == seeded_content
         )
         get_resp = git_client.get(
@@ -789,7 +789,7 @@ class TestDraftGitIntegration:
         )
 
         assert put_resp.status_code == 200
-        assert fake_github_client.commit_log[-1] == ("rune/draft/wb", "Rename skill id")
+        assert fake_github_client.commit_log[-1] == ("jaas/draft/wb", "Rename skill id")
 
     def test_move_to_directory_migrates_a_pre_existing_flat_draft(
         self, git_client, fake_github_client
@@ -806,7 +806,7 @@ class TestDraftGitIntegration:
             headers=_auth(token),
         )
         git_client.app.state.draft_store._replace(draft_id, git_subdirectory=None)  # noqa: SLF001
-        fake_github_client.file_contents["rune/draft/wb"] = {
+        fake_github_client.file_contents["jaas/draft/wb"] = {
             "manifest.yaml": b"id: acme.text.foo\nversion: 1.0.0\n",
         }
 
@@ -817,7 +817,7 @@ class TestDraftGitIntegration:
         assert resp.status_code == 200, resp.text
         assert resp.json()["gitSubdirectory"] == "acme/text/foo"
         assert resp.json()["gitSyncStatus"] == "synced"
-        tree = fake_github_client.file_contents["rune/draft/wb"]
+        tree = fake_github_client.file_contents["jaas/draft/wb"]
         assert "manifest.yaml" not in tree
         assert tree["acme/text/foo/manifest.yaml"] == b"id: acme.text.foo\nversion: 1.0.0\n"
 

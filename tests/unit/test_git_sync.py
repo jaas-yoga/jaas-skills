@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.drafts import git_sync
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.drafts import git_sync
 from tests.fixtures.fake_github_client import FakeGitHubApiClient
 
 
@@ -24,7 +24,7 @@ class TestParseGithubRepoUrl:
         )
 
     def test_rejects_a_non_github_url(self):
-        with pytest.raises(RuneError, match="not a GitHub repo URL"):
+        with pytest.raises(JaasError, match="not a GitHub repo URL"):
             git_sync.parse_github_repo_url("https://bitbucket.org/acme/tool-x")
 
 
@@ -97,33 +97,33 @@ class TestCreateWorkingBranch:
 
         sha, seeded = git_sync.create_working_branch(
             client, "tok", owner="acme", repo="tool-x", target_branch="main",
-            working_branch="rune/draft/abc", seed_changes={},
+            working_branch="jaas/draft/abc", seed_changes={},
         )
 
         assert sha == client.branches["main"]
         assert seeded is False
-        assert client.branches["rune/draft/abc"] == sha
-        assert client.file_contents["rune/draft/abc"] == {"manifest.yaml": b"id: x"}
+        assert client.branches["jaas/draft/abc"] == sha
+        assert client.file_contents["jaas/draft/abc"] == {"manifest.yaml": b"id: x"}
 
     def test_raises_when_the_branch_name_already_exists(self):
         client = FakeGitHubApiClient()
         client.seed_branch("main")
-        client.seed_branch("rune/draft/abc")
+        client.seed_branch("jaas/draft/abc")
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             git_sync.create_working_branch(
                 client, "tok", owner="acme", repo="tool-x", target_branch="main",
-                working_branch="rune/draft/abc", seed_changes={},
+                working_branch="jaas/draft/abc", seed_changes={},
             )
         assert exc_info.value.code == ErrorCode.DRAFT_GIT_BRANCH_EXISTS
 
     def test_empty_repo_raises_instead_of_silently_initializing(self):
         client = FakeGitHubApiClient()  # no branches seeded — a brand-new, empty repo
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             git_sync.create_working_branch(
                 client, "tok", owner="acme", repo="tool-x", target_branch="main",
-                working_branch="rune/draft/abc", seed_changes={"manifest.yaml": b"id: x"},
+                working_branch="jaas/draft/abc", seed_changes={"manifest.yaml": b"id: x"},
             )
 
         assert exc_info.value.code == ErrorCode.DRAFT_GIT_EMPTY_REPO
@@ -134,40 +134,40 @@ class TestCreateWorkingBranch:
 
         sha, seeded = git_sync.create_working_branch(
             client, "tok", owner="acme", repo="tool-x", target_branch="main",
-            working_branch="rune/draft/abc", seed_changes={"manifest.yaml": b"id: x"},
+            working_branch="jaas/draft/abc", seed_changes={"manifest.yaml": b"id: x"},
             allow_empty_repo_init=True,
         )
 
         assert seeded is True
         assert client.branches["main"] == sha
-        assert client.branches["rune/draft/abc"] == sha
+        assert client.branches["jaas/draft/abc"] == sha
         assert client.file_contents["main"] == {"manifest.yaml": b"id: x"}
-        assert client.file_contents["rune/draft/abc"] == {"manifest.yaml": b"id: x"}
+        assert client.file_contents["jaas/draft/abc"] == {"manifest.yaml": b"id: x"}
 
 
 class TestCommitFiles:
     def test_writes_and_deletes_in_one_commit(self):
         client = FakeGitHubApiClient()
-        client.seed_branch("rune/draft/abc", files={"old.yaml": b"stale"})
+        client.seed_branch("jaas/draft/abc", files={"old.yaml": b"stale"})
 
         new_sha = git_sync.commit_files(
-            client, "tok", owner="acme", repo="tool-x", branch="rune/draft/abc",
+            client, "tok", owner="acme", repo="tool-x", branch="jaas/draft/abc",
             changes={"manifest.yaml": b"id: x", "old.yaml": None},
             message="Update files",
         )
 
-        assert new_sha == client.branches["rune/draft/abc"]
-        assert client.file_contents["rune/draft/abc"] == {"manifest.yaml": b"id: x"}
-        assert client.commit_log == [("rune/draft/abc", "Update files")]
+        assert new_sha == client.branches["jaas/draft/abc"]
+        assert client.file_contents["jaas/draft/abc"] == {"manifest.yaml": b"id: x"}
+        assert client.commit_log == [("jaas/draft/abc", "Update files")]
 
     def test_propagates_a_failure_without_partial_state_confusion(self):
         client = FakeGitHubApiClient()
-        client.seed_branch("rune/draft/abc")
-        client.fail_commit_with = RuneError(ErrorCode.GITHUB_API_ERROR, "rate limited")
+        client.seed_branch("jaas/draft/abc")
+        client.fail_commit_with = JaasError(ErrorCode.GITHUB_API_ERROR, "rate limited")
 
-        with pytest.raises(RuneError, match="rate limited"):
+        with pytest.raises(JaasError, match="rate limited"):
             git_sync.commit_files(
-                client, "tok", owner="acme", repo="tool-x", branch="rune/draft/abc",
+                client, "tok", owner="acme", repo="tool-x", branch="jaas/draft/abc",
                 changes={"manifest.yaml": b"id: x"}, message="Update",
             )
 
@@ -176,9 +176,9 @@ class TestMergePublishPr:
     def test_merges_immediately_when_already_mergeable(self):
         client = FakeGitHubApiClient()
         client.seed_branch("main", files={})
-        client.seed_branch("rune/draft/abc", files={"manifest.yaml": b"id: x"})
+        client.seed_branch("jaas/draft/abc", files={"manifest.yaml": b"id: x"})
         pr = client.create_pull_request(
-            "tok", owner="acme", repo="tool-x", head="rune/draft/abc", base="main",
+            "tok", owner="acme", repo="tool-x", head="jaas/draft/abc", base="main",
             title="t", body="b",
         )
         client.mergeable = True
@@ -195,9 +195,9 @@ class TestMergePublishPr:
         monkeypatch.setattr(git_sync.time, "sleep", lambda _: None)
         client = FakeGitHubApiClient()
         client.seed_branch("main")
-        client.seed_branch("rune/draft/abc")
+        client.seed_branch("jaas/draft/abc")
         pr = client.create_pull_request(
-            "tok", owner="acme", repo="tool-x", head="rune/draft/abc", base="main",
+            "tok", owner="acme", repo="tool-x", head="jaas/draft/abc", base="main",
             title="t", body="b",
         )
         client.mergeable = True
@@ -211,15 +211,15 @@ class TestMergePublishPr:
         monkeypatch.setattr(git_sync.time, "sleep", lambda _: None)
         client = FakeGitHubApiClient()
         client.seed_branch("main")
-        client.seed_branch("rune/draft/abc")
+        client.seed_branch("jaas/draft/abc")
         pr = client.create_pull_request(
-            "tok", owner="acme", repo="tool-x", head="rune/draft/abc", base="main",
+            "tok", owner="acme", repo="tool-x", head="jaas/draft/abc", base="main",
             title="t", body="b",
         )
         client.mergeable = False
         client.mergeable_after_polls = 1
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             git_sync.merge_publish_pr(client, "tok", owner="acme", repo="tool-x", number=pr.number)
 
         assert exc_info.value.code == ErrorCode.DRAFT_GIT_MERGE_CONFLICT

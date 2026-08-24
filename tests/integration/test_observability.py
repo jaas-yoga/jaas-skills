@@ -1,19 +1,19 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.config import FeatureFlags, Settings
-from rune_registry.index.bootstrap import bootstrap_index
-from rune_registry.index.consumer import IndexEventConsumer
-from rune_registry.index.events import InMemoryEventBus
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.observability import metrics as m
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.config import FeatureFlags, Settings
+from jaas_registry.index.bootstrap import bootstrap_index
+from jaas_registry.index.consumer import IndexEventConsumer
+from jaas_registry.index.events import InMemoryEventBus
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.observability import metrics as m
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.index_entries import make_entry
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET
 from tests.fixtures.package_dir import write_package_dir
@@ -52,8 +52,8 @@ def test_metrics_endpoint_exposes_prometheus_format(client):
     client.get("/api/v1/skills")
     resp = client.get("/metrics")
     assert resp.status_code == 200
-    assert "rune_request_total" in resp.text
-    assert "rune_request_latency_seconds" in resp.text
+    assert "jaas_request_total" in resp.text
+    assert "jaas_request_latency_seconds" in resp.text
 
 
 def test_request_total_increments_after_real_request(client):

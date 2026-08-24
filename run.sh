@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Single-point process manager for the backend: the Python API (runectl
-# serve) and the standalone rune-guardrails service (a separate repo/
-# codebase — see RUNE_GUARDRAILS_DIR below), started/stopped together.
+# Single-point process manager for the backend: the Python API (jaasctl
+# serve) and the standalone jaas-guardrails service (a separate repo/
+# codebase — see JAAS_GUARDRAILS_DIR below), started/stopped together.
 #
 # This repo no longer contains the web UI — it lives in the sibling
-# rune_ui repo, which has its own run.sh that starts this api, guardrails,
+# jaas_ui repo, which has its own run.sh that starts this api, guardrails,
 # and its own web process together for full-stack local dev. Use *this*
 # script for backend-only work.
 #
@@ -16,7 +16,7 @@
 #   ./run.sh logs [api|guardrails]   tail one service's log (default: api)
 #
 # No service is invoked through its package-manager wrapper (`uv run
-# runectl`) — wrappers fork a child and return immediately, so `$!` would
+# jaasctl`) — wrappers fork a child and return immediately, so `$!` would
 # capture the wrapper's PID rather than the actual server's, breaking
 # stop/restart. Invoking each venv entry point directly makes `$!` the
 # real process, which installs its own SIGTERM handler for graceful
@@ -27,31 +27,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 RUN_DIR="$SCRIPT_DIR/.run"
-RUNECTL="$SCRIPT_DIR/.venv/bin/runectl"
+JAASCTL="$SCRIPT_DIR/.venv/bin/jaasctl"
 
 # The guardrails service is a genuinely separate codebase (its own repo,
 # own pyproject.toml, own deploy) — this is only a local-dev convenience
 # for running both together. Defaults to a sibling checkout; override if
-# yours lives elsewhere, or skip starting it if RUNE_GUARDRAILS_DIR="".
-GUARDRAILS_DIR="${RUNE_GUARDRAILS_DIR-$SCRIPT_DIR/../rune_guardrail}"
-GUARDRAILS_BIN="$GUARDRAILS_DIR/.venv/bin/rune-guardrails"
+# yours lives elsewhere, or skip starting it if JAAS_GUARDRAILS_DIR="".
+GUARDRAILS_DIR="${JAAS_GUARDRAILS_DIR-$SCRIPT_DIR/../jaas_guardrail}"
+GUARDRAILS_BIN="$GUARDRAILS_DIR/.venv/bin/jaas-guardrails"
 
-API_HOST="${RUNE_HOST:-127.0.0.1}"
-API_PORT="${RUNE_PORT:-8027}"
-GUARDRAILS_HOST="${RUNE_GUARDRAILS_HOST:-127.0.0.1}"
-GUARDRAILS_PORT="${RUNE_GUARDRAILS_PORT:-8028}"
-STOP_TIMEOUT="${RUNE_STOP_TIMEOUT:-15}"   # seconds to wait for graceful shutdown before SIGKILL
+API_HOST="${JAAS_HOST:-127.0.0.1}"
+API_PORT="${JAAS_PORT:-8027}"
+GUARDRAILS_HOST="${JAAS_GUARDRAILS_HOST:-127.0.0.1}"
+GUARDRAILS_PORT="${JAAS_GUARDRAILS_PORT:-8028}"
+STOP_TIMEOUT="${JAAS_STOP_TIMEOUT:-15}"   # seconds to wait for graceful shutdown before SIGKILL
 
 # The API talks to the guardrails service over HTTP only (guardrails/client.py)
 # — never in-process. Point it at the instance this script manages unless
 # already overridden.
-export RUNE_GUARDRAILS_SERVICE_URL="${RUNE_GUARDRAILS_SERVICE_URL:-http://$GUARDRAILS_HOST:$GUARDRAILS_PORT}"
+export JAAS_GUARDRAILS_SERVICE_URL="${JAAS_GUARDRAILS_SERVICE_URL:-http://$GUARDRAILS_HOST:$GUARDRAILS_PORT}"
 
 # Google OAuth client id the API validates sign-in ID tokens against. This
 # repo has no web UI of its own anymore, so there's no sibling env file to
-# read it from automatically — set it explicitly (the rune_ui repo's
+# read it from automatically — set it explicitly (the jaas_ui repo's
 # run.sh does this for you when it starts this api as a subprocess).
-export RUNE_GOOGLE_CLIENT_ID="${RUNE_GOOGLE_CLIENT_ID:-}"
+export JAAS_GOOGLE_CLIENT_ID="${JAAS_GOOGLE_CLIENT_ID:-}"
 
 mkdir -p "$RUN_DIR"
 
@@ -67,19 +67,19 @@ Usage: $(basename "$0") [start|stop|restart|status|logs [api|guardrails]]
   logs [api|guardrails]  tail one service's log file (default: api)
 
 Environment overrides:
-  RUNE_HOST          api host to bind (default 127.0.0.1)
-  RUNE_PORT          api port to bind (default 8027)
-  RUNE_GUARDRAILS_DIR   path to the standalone rune-guardrails service repo
-                        (default: ../rune_guardrail, a sibling checkout).
+  JAAS_HOST          api host to bind (default 127.0.0.1)
+  JAAS_PORT          api port to bind (default 8027)
+  JAAS_GUARDRAILS_DIR   path to the standalone jaas-guardrails service repo
+                        (default: ../jaas_guardrail, a sibling checkout).
                         Set to "" to skip starting it — the API degrades
                         gracefully (503 only on the specific routes that
                         need it) rather than failing to start.
-  RUNE_GUARDRAILS_HOST  guardrails service host to bind (default 127.0.0.1)
-  RUNE_GUARDRAILS_PORT  guardrails service port to bind (default 8028)
-  RUNE_STOP_TIMEOUT  seconds to wait for graceful shutdown before SIGKILL (default 15)
-  RUNE_GOOGLE_CLIENT_ID  Google OAuth client id the API validates sign-in
+  JAAS_GUARDRAILS_HOST  guardrails service host to bind (default 127.0.0.1)
+  JAAS_GUARDRAILS_PORT  guardrails service port to bind (default 8028)
+  JAAS_STOP_TIMEOUT  seconds to wait for graceful shutdown before SIGKILL (default 15)
+  JAAS_GOOGLE_CLIENT_ID  Google OAuth client id the API validates sign-in
                          tokens against. Must match whatever client the web
-                         UI (rune_ui) is using — its run.sh sets this for
+                         UI (jaas_ui) is using — its run.sh sets this for
                          you when it starts this api as a subprocess; set
                          it explicitly if running this script standalone
                          against a real Google sign-in flow.
@@ -155,26 +155,26 @@ stop_service() {
 
 start_guardrails() {
     if [ -z "$GUARDRAILS_DIR" ]; then
-        echo "[guardrails] skipped — RUNE_GUARDRAILS_DIR is empty"
+        echo "[guardrails] skipped — JAAS_GUARDRAILS_DIR is empty"
         return 0
     fi
     if [ ! -d "$GUARDRAILS_DIR" ]; then
         echo "[guardrails] skipped — no repo found at $GUARDRAILS_DIR"
-        echo "             (clone https://github.com/balakrishna-maduru/rune-guardrails-catalog there, or set RUNE_GUARDRAILS_DIR)"
+        echo "             (clone https://github.com/balakrishna-maduru/jaas-guardrails-catalog there, or set JAAS_GUARDRAILS_DIR)"
         return 0
     fi
 
     require_uv
 
     local pid
-    if pid="$(running_pid guardrails rune-guardrails)"; then
+    if pid="$(running_pid guardrails jaas-guardrails)"; then
         echo "[guardrails] already running (pid $pid) at http://$GUARDRAILS_HOST:$GUARDRAILS_PORT"
         return 0
     fi
 
     if port_in_use_by_someone_else "$GUARDRAILS_PORT"; then
         echo "error: [guardrails] port $GUARDRAILS_PORT is already in use by another process (not managed by this script)." >&2
-        echo "       stop that process first, or set RUNE_GUARDRAILS_PORT to a free port." >&2
+        echo "       stop that process first, or set JAAS_GUARDRAILS_PORT to a free port." >&2
         exit 1
     fi
 
@@ -184,13 +184,13 @@ start_guardrails() {
     fi
 
     echo "[guardrails] starting on http://$GUARDRAILS_HOST:$GUARDRAILS_PORT ..."
-    RUNE_GUARDRAILS_HOST="$GUARDRAILS_HOST" RUNE_GUARDRAILS_PORT="$GUARDRAILS_PORT" \
+    JAAS_GUARDRAILS_HOST="$GUARDRAILS_HOST" JAAS_GUARDRAILS_PORT="$GUARDRAILS_PORT" \
         nohup "$GUARDRAILS_BIN" >>"$(log_file guardrails)" 2>&1 &
     local new_pid=$!
     echo "$new_pid" >"$(pid_file guardrails)"
 
     sleep 1
-    if ! pid_matches "$new_pid" rune-guardrails; then
+    if ! pid_matches "$new_pid" jaas-guardrails; then
         echo "error: [guardrails] exited immediately, see $(log_file guardrails)" >&2
         rm -f "$(pid_file guardrails)"
         exit 1
@@ -202,29 +202,29 @@ start_api() {
     require_uv
 
     local pid
-    if pid="$(running_pid api runectl)"; then
+    if pid="$(running_pid api jaasctl)"; then
         echo "[api] already running (pid $pid) at http://$API_HOST:$API_PORT"
         return 0
     fi
 
     if port_in_use_by_someone_else "$API_PORT"; then
         echo "error: [api] port $API_PORT is already in use by another process (not managed by this script)." >&2
-        echo "       stop that process first, or set RUNE_PORT to a free port." >&2
+        echo "       stop that process first, or set JAAS_PORT to a free port." >&2
         exit 1
     fi
 
-    if [ ! -x "$RUNECTL" ]; then
+    if [ ! -x "$JAASCTL" ]; then
         echo "[api] venv entry point missing, running 'uv sync' first..."
         uv sync
     fi
 
     echo "[api] starting on http://$API_HOST:$API_PORT ..."
-    nohup "$RUNECTL" serve --host "$API_HOST" --port "$API_PORT" >>"$(log_file api)" 2>&1 &
+    nohup "$JAASCTL" serve --host "$API_HOST" --port "$API_PORT" >>"$(log_file api)" 2>&1 &
     local new_pid=$!
     echo "$new_pid" >"$(pid_file api)"
 
     sleep 1
-    if ! pid_matches "$new_pid" runectl; then
+    if ! pid_matches "$new_pid" jaasctl; then
         echo "error: [api] exited immediately, see $(log_file api)" >&2
         rm -f "$(pid_file api)"
         exit 1
@@ -241,20 +241,20 @@ do_start() {
 }
 
 do_stop() {
-    stop_service api runectl
-    stop_service guardrails rune-guardrails
+    stop_service api jaasctl
+    stop_service guardrails jaas-guardrails
 }
 
 do_status() {
     local pid
     if [ -n "$GUARDRAILS_DIR" ] && [ -d "$GUARDRAILS_DIR" ]; then
-        if pid="$(running_pid guardrails rune-guardrails)"; then
+        if pid="$(running_pid guardrails jaas-guardrails)"; then
             echo "[guardrails] running (pid $pid) at http://$GUARDRAILS_HOST:$GUARDRAILS_PORT"
         else
             echo "[guardrails] not running"
         fi
     fi
-    if pid="$(running_pid api runectl)"; then
+    if pid="$(running_pid api jaasctl)"; then
         echo "[api] running (pid $pid) at http://$API_HOST:$API_PORT"
     else
         echo "[api] not running"

@@ -1,4 +1,4 @@
-from rune_registry.authn.github_connections import GitHubConnectionStore
+from jaas_registry.authn.github_connections import GitHubConnectionStore
 
 
 def test_get_returns_none_when_missing(tmp_path):

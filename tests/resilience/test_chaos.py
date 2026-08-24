@@ -7,16 +7,16 @@ errors (retry with backoff).
 
 import pytest
 
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.index.bootstrap import bootstrap_index
-from rune_registry.index.consumer import IndexEventConsumer
-from rune_registry.index.events import InMemoryEventBus
-from rune_registry.index.reconciliation import reconcile
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.index.bootstrap import bootstrap_index
+from jaas_registry.index.consumer import IndexEventConsumer
+from jaas_registry.index.events import InMemoryEventBus
+from jaas_registry.index.reconciliation import reconcile
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.flaky_store import FlakyStore, TransientStorageError
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir

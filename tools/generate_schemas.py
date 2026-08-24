@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rune_registry.validation.models import (
+from jaas_registry.validation.models import (
     DependenciesDocument,
     IoSchemaDocument,
     ManifestDocument,

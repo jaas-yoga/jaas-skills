@@ -7,7 +7,7 @@ which parts of this phase a local repository can and cannot execute.
 The "Auth service and web UI rollout" section below is Phase 9's deliverable
 per ui-implementation-plan.md, covering the Google-sign-in auth service
 (`authn/`), the sharing/drafts/tenant/PAT API surface added to this repo,
-and the Next.js web UI (the independent sibling repo `rune_ui`) built on
+and the Next.js web UI (the independent sibling repo `jaas_ui`) built on
 top of it.
 
 ## Why rollback is low-risk here
@@ -44,15 +44,15 @@ security sign-off documented, on-call handoff complete.
 2. Route a small percentage of traffic to the canary subset.
 3. Compare canary vs. baseline on the Phase 6 metrics (design.md §10.1),
    scraped from each fleet's `/metrics`:
-   - `rune_request_latency_seconds` p95 per endpoint, against the §9.1 SLOs.
-   - 5xx share of `rune_request_total` (same computation as
+   - `jaas_request_latency_seconds` p95 per endpoint, against the §9.1 SLOs.
+   - 5xx share of `jaas_request_total` (same computation as
      `alerts.evaluate_error_rate_spike`).
-   - `rune_authz_denied_total` rate — a spike suggests a policy or JWT config
+   - `jaas_authz_denied_total` rate — a spike suggests a policy or JWT config
      regression in the new build, not real attack traffic, if it correlates
      with the canary specifically.
-   - `rune_signature_verification_failures_total` — any increase at all is a
+   - `jaas_signature_verification_failures_total` — any increase at all is a
      promotion blocker; see `alerts.evaluate_signature_verification_anomaly`.
-   - `rune_index_event_apply_lag_seconds` — confirms the new build's event
+   - `jaas_index_event_apply_lag_seconds` — confirms the new build's event
      consumer keeps up.
 4. Promote (see below) only if canary metrics are within baseline tolerance
    on all of the above for the full observation window.
@@ -105,8 +105,8 @@ There is intentionally **no feature flag** gating any of this (see
 ui-implementation-plan.md's Phase 9 note for the reasoning): `common/
 config.py`'s `FeatureFlags` pattern gates behavior inside one FastAPI
 process, but the web UI is a separately deployed Next.js app (its own
-repo, `rune_ui`) calling this API over HTTP — there's no in-process branch
-for a flag to control. The equivalent lever is simply whether `rune_ui` is
+repo, `jaas_ui`) calling this API over HTTP — there's no in-process branch
+for a flag to control. The equivalent lever is simply whether `jaas_ui` is
 deployed and routable; the backend additions here are safe to deploy
 unconditionally ahead of that, since a client that never calls the new
 routes is unaffected by their existence.
@@ -116,36 +116,36 @@ routes is unaffected by their existence.
 Deploy the backend build carrying `authn/`/`sharing/`/`drafts/` the same way
 as any other backend change (see "Canary procedure" above), with two
 additions to the standard metric comparison:
-- `rune_authz_denied_total` on the new routes specifically — a spike here
-  most often means `RUNE_GOOGLE_CLIENT_ID` doesn't match the OAuth client
-  `rune_ui`'s users are signing in through, not real attack traffic.
+- `jaas_authz_denied_total` on the new routes specifically — a spike here
+  most often means `JAAS_GOOGLE_CLIENT_ID` doesn't match the OAuth client
+  `jaas_ui`'s users are signing in through, not real attack traffic.
 - Search/metadata p95 stays within the visibility-filter budget documented
   in ui-implementation-plan.md's Phase 2 note (150ms → 160ms budget change),
   since every search request now evaluates `can_view` per non-public entry.
 
-### Deploying `rune_ui`
+### Deploying `jaas_ui`
 
-`rune_ui` is a wholly separate repo/deploy from this one, with no canary
+`jaas_ui` is a wholly separate repo/deploy from this one, with no canary
 mechanism of its own described here (no fleet, no load balancer) — treat
-"deploy `rune_ui`" itself as the staged step, analogous to widening a
+"deploy `jaas_ui`" itself as the staged step, analogous to widening a
 feature flag: point a small internal group at it first (e.g. an internal
 hostname or allowlist at the reverse proxy), confirm sign-in and the
 golden paths from ui-implementation-plan.md Phase 8 work end-to-end, then
 open it up.
 
-Required configuration before any `rune_ui` deploy:
-- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (rune_ui) and
-  `RUNE_GOOGLE_CLIENT_ID` (this backend) must reference the *same* Google
+Required configuration before any `jaas_ui` deploy:
+- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (jaas_ui) and
+  `JAAS_GOOGLE_CLIENT_ID` (this backend) must reference the *same* Google
   OAuth client — a mismatch fails every sign-in with
   `INVALID_GOOGLE_TOKEN`, not a partial failure.
 - `AUTH_SECRET` must be a freshly generated production secret, never the
-  placeholder from `rune_ui`'s `.env.local.example`.
-- `RUNE_API_URL` (in `rune_ui`) must point at the backend fleet the
+  placeholder from `jaas_ui`'s `.env.local.example`.
+- `JAAS_API_URL` (in `jaas_ui`) must point at the backend fleet the
   canary/promotion step above is targeting, not a dev/staging backend.
 
 ### Rollback
 
-Undeploying `rune_ui` (or reverting the backend build) follows the same
+Undeploying `jaas_ui` (or reverting the backend build) follows the same
 rollback procedure as above — shift traffic back, terminate, no data
 rollback step. One addition specific to this surface: personal access
 tokens minted during the window stay valid and revocable (`PatStore` is
@@ -158,7 +158,7 @@ individually via `DELETE /api/v1/account/tokens/{id}`.
 
 The publish-time content-safety scan (design.md §4.5) is a **third,
 independently deployed service** —
-[rune-guardrails-catalog](https://github.com/balakrishna-maduru/rune-guardrails-catalog)
+[jaas-guardrails-catalog](https://github.com/balakrishna-maduru/jaas-guardrails-catalog)
 — not part of this repo's build or release. It has its own repo, its own
 CI, its own container image, and its own rollout cadence, entirely
 decoupled from this app's.
@@ -182,12 +182,12 @@ fresh per request. That means:
 
 ### Required configuration
 
-- `RUNE_GUARDRAILS_SERVICE_URL` (this app) must point at wherever the
+- `JAAS_GUARDRAILS_SERVICE_URL` (this app) must point at wherever the
   guardrails service is actually running — `http://127.0.0.1:8028` is
   only the local-dev default `run.sh` wires up. A production deploy needs
   this set explicitly to the guardrails service's real address.
 - The guardrails service itself takes no configuration beyond its bind
-  host/port (`RUNE_GUARDRAILS_HOST`/`RUNE_GUARDRAILS_PORT`) — it has no
+  host/port (`JAAS_GUARDRAILS_HOST`/`JAAS_GUARDRAILS_PORT`) — it has no
   database, no secrets, and no dependency on this app's `policy_dir` or
   any other state this app owns.
 
@@ -198,10 +198,10 @@ separately:
 - **Guardrails service**: deploy the new version behind its own canary
   slice (or just a second instance on a second port during local/small-
   scale rollout), confirm `GET /healthz` and `GET /catalog` respond
-  correctly, then point `RUNE_GUARDRAILS_SERVICE_URL` at it.
+  correctly, then point `JAAS_GUARDRAILS_SERVICE_URL` at it.
 - **This app**: a build that only changes `guardrails/client.py` or
   `guardrails/policy.py` follows the standard backend canary procedure
-  above, watching `rune_authz_denied_total` is unaffected (guardrails
+  above, watching `jaas_authz_denied_total` is unaffected (guardrails
   routes have their own auth path, unrelated to this metric) and that
   `GUARDRAILS_SERVICE_UNAVAILABLE` responses stay at zero (a nonzero rate
   means the configured URL is wrong or that service is unreachable from

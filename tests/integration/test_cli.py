@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from rune_registry.cli import main
+from jaas_registry.cli import main
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
@@ -10,8 +10,8 @@ from tests.fixtures.package_dir import write_package_dir
 
 @pytest.fixture(autouse=True)
 def _isolated_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("RUNE_STORAGE_ROOT", str(tmp_path / "storage"))
-    monkeypatch.setenv("RUNE_POLICY_DIR", str(tmp_path / "policy"))
+    monkeypatch.setenv("JAAS_STORAGE_ROOT", str(tmp_path / "storage"))
+    monkeypatch.setenv("JAAS_POLICY_DIR", str(tmp_path / "policy"))
     return tmp_path
 
 

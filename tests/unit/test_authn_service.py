@@ -2,16 +2,16 @@ from dataclasses import dataclass
 
 import pytest
 
-from rune_registry.authn.google import GoogleIdentity
-from rune_registry.authn.invites import InviteStore
-from rune_registry.authn.models import TenantRole
-from rune_registry.authn.service import AuthService
-from rune_registry.authn.tenants import MembershipStore, TenantStore
-from rune_registry.authn.tokens import RefreshTokenStore
-from rune_registry.authn.users import UserStore
-from rune_registry.authz.jwt_validation import decode_token
-from rune_registry.common.config import Settings
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.authn.google import GoogleIdentity
+from jaas_registry.authn.invites import InviteStore
+from jaas_registry.authn.models import TenantRole
+from jaas_registry.authn.service import AuthService
+from jaas_registry.authn.tenants import MembershipStore, TenantStore
+from jaas_registry.authn.tokens import RefreshTokenStore
+from jaas_registry.authn.users import UserStore
+from jaas_registry.authz.jwt_validation import decode_token
+from jaas_registry.common.config import Settings
+from jaas_registry.common.errors import ErrorCode, JaasError
 
 SECRET = "test-only-shared-secret-at-least-32-bytes!!"
 
@@ -22,7 +22,7 @@ class FakeGoogleIdentityVerifier:
 
     def verify(self, google_id_token_jwt: str) -> GoogleIdentity:
         if google_id_token_jwt != "valid-token":
-            raise RuneError(ErrorCode.INVALID_GOOGLE_TOKEN, "bad token")
+            raise JaasError(ErrorCode.INVALID_GOOGLE_TOKEN, "bad token")
         return self.identity
 
 
@@ -54,6 +54,50 @@ def service(settings):
     )
 
 
+def test_dev_login_is_disabled_when_no_password_configured(service):
+    with pytest.raises(JaasError) as excinfo:
+        service.sign_in_with_dev_credentials("owner@jaas.local", "anything")
+    assert excinfo.value.code == ErrorCode.DEV_LOGIN_NOT_CONFIGURED
+
+
+def test_dev_login_creates_the_seeded_owner_and_admin_as_admins_of_their_own_tenants(
+    settings, tmp_path
+):
+    dev_settings = Settings(
+        storage_root=tmp_path / "storage2",
+        policy_dir=tmp_path / "policy2",
+        jwt_secret=SECRET,
+        dev_login_password="shared-dev-password",
+    )
+    service = AuthService(
+        settings=dev_settings,
+        verifier=None,
+        user_store=UserStore(dev_settings.policy_dir),
+        tenant_store=TenantStore(dev_settings.policy_dir),
+        membership_store=MembershipStore(dev_settings.policy_dir),
+        refresh_token_store=RefreshTokenStore(dev_settings.policy_dir),
+    )
+
+    owner = service.sign_in_with_dev_credentials("owner@jaas.local", "shared-dev-password")
+    admin = service.sign_in_with_dev_credentials("admin@jaas.local", "shared-dev-password")
+
+    assert owner.user.email == "owner@jaas.local"
+    assert owner.tenants[0].role is TenantRole.ADMIN
+    assert admin.user.email == "admin@jaas.local"
+    assert admin.tenants[0].role is TenantRole.ADMIN
+    assert owner.active_tenant_id != admin.active_tenant_id
+
+    # Same password, wrong/unknown email — still rejected.
+    with pytest.raises(JaasError) as excinfo:
+        service.sign_in_with_dev_credentials("nobody@jaas.local", "shared-dev-password")
+    assert excinfo.value.code == ErrorCode.INVALID_DEV_LOGIN
+
+    # Right email, wrong password — rejected.
+    with pytest.raises(JaasError) as excinfo:
+        service.sign_in_with_dev_credentials("owner@jaas.local", "wrong")
+    assert excinfo.value.code == ErrorCode.INVALID_DEV_LOGIN
+
+
 def test_first_sign_in_creates_user_and_personal_tenant_as_admin(service, settings):
     result = service.sign_in_with_google("valid-token")
 
@@ -76,7 +120,7 @@ def test_second_sign_in_reuses_the_same_user_and_tenant(service):
 
 
 def test_invalid_google_token_is_rejected(service):
-    with pytest.raises(RuneError) as excinfo:
+    with pytest.raises(JaasError) as excinfo:
         service.sign_in_with_google("garbage")
     assert excinfo.value.code == ErrorCode.INVALID_GOOGLE_TOKEN
 
@@ -91,13 +135,13 @@ def test_sign_in_without_a_configured_verifier_fails_closed(settings):
         refresh_token_store=RefreshTokenStore(settings.policy_dir),
     )
 
-    with pytest.raises(RuneError) as excinfo:
+    with pytest.raises(JaasError) as excinfo:
         service.sign_in_with_google("valid-token")
     assert excinfo.value.code == ErrorCode.INVALID_GOOGLE_TOKEN
 
 
 def test_sign_in_requesting_a_foreign_tenant_is_rejected(service):
-    with pytest.raises(RuneError) as excinfo:
+    with pytest.raises(JaasError) as excinfo:
         service.sign_in_with_google("valid-token", requested_tenant_id="tnt_not_mine")
     assert excinfo.value.code == ErrorCode.NOT_TENANT_MEMBER
 
@@ -114,7 +158,7 @@ def test_refresh_mints_a_new_access_token_for_the_same_tenant(service, settings)
 
 
 def test_refresh_with_invalid_token_is_rejected(service):
-    with pytest.raises(RuneError) as excinfo:
+    with pytest.raises(JaasError) as excinfo:
         service.refresh("not-a-real-refresh-token")
     assert excinfo.value.code == ErrorCode.INVALID_REFRESH_TOKEN
 

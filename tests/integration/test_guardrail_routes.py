@@ -1,14 +1,14 @@
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.common.config import Settings
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.common.config import Settings
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_guardrails_client import FAKE_CATALOG, FakeGuardrailsClient
 
 
 def test_catalog_endpoint_needs_no_auth_and_lists_all_checks(tmp_path):
-    """The real 19-rule catalog lives only in the standalone rune-guardrails
+    """The real 19-rule catalog lives only in the standalone jaas-guardrails
     service and is tested there; this only verifies the proxy endpoint
     forwards whatever the client returns, shape intact."""
     index = InMemoryIndex()

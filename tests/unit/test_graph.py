@@ -1,7 +1,7 @@
 import pytest
 
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.validation.graph import find_cycles, validate_no_cycles
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.validation.graph import find_cycles, validate_no_cycles
 
 
 def test_acyclic_graph_has_no_cycles():
@@ -32,7 +32,7 @@ def test_indirect_cycle_detected():
 
 def test_validate_no_cycles_raises_with_stable_code():
     graph = {"a": ["b"], "b": ["a"]}
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         validate_no_cycles(graph)
     assert exc_info.value.code == ErrorCode.CIRCULAR_DEPENDENCY
     assert "cycles" in exc_info.value.details

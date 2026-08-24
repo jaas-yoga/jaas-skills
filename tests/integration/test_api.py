@@ -1,10 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.common.config import Settings
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.common.config import Settings
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.index_entries import make_entry
 
 

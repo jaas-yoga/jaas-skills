@@ -5,17 +5,17 @@ and /drafts file endpoints) — GET .../files (list) and .../files/{path}
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.config import Settings
-from rune_registry.index.consumer import IndexEventConsumer
-from rune_registry.index.events import InMemoryEventBus
-from rune_registry.index.models import Visibility
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.config import Settings
+from jaas_registry.index.consumer import IndexEventConsumer
+from jaas_registry.index.events import InMemoryEventBus
+from jaas_registry.index.models import Visibility
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.package_dir import write_package_dir
 
 

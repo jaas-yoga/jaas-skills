@@ -1,8 +1,8 @@
 import pytest
 
-from rune_registry.artifact.packaging import build_normalized_archive
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.drafts.store import DraftStore
+from jaas_registry.artifact.packaging import build_normalized_archive
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.drafts.store import DraftStore
 
 
 def test_create_blank_draft_seeds_a_starter_manifest(tmp_path):
@@ -123,7 +123,7 @@ class TestPathSafety:
         store = DraftStore(tmp_path)
         draft = store.create(owner_user="usr_1", owner_tenant="tnt_1")
 
-        with pytest.raises(RuneError) as excinfo:
+        with pytest.raises(JaasError) as excinfo:
             store.write_file(draft.id, bad_path, b"malicious")
         assert excinfo.value.code == ErrorCode.INVALID_FILE_PATH
 
@@ -132,7 +132,7 @@ class TestPathSafety:
         draft = store.create(owner_user="usr_1", owner_tenant="tnt_1")
         sentinel = tmp_path / "outside.txt"
 
-        with pytest.raises(RuneError):
+        with pytest.raises(JaasError):
             store.write_file(draft.id, "../../outside.txt", b"pwned")
 
         assert not sentinel.exists()
@@ -140,11 +140,11 @@ class TestPathSafety:
     def test_read_rejects_path_traversal(self, tmp_path):
         store = DraftStore(tmp_path)
         draft = store.create(owner_user="usr_1", owner_tenant="tnt_1")
-        with pytest.raises(RuneError):
+        with pytest.raises(JaasError):
             store.read_file(draft.id, "../../../etc/passwd")
 
     def test_delete_rejects_path_traversal(self, tmp_path):
         store = DraftStore(tmp_path)
         draft = store.create(owner_user="usr_1", owner_tenant="tnt_1")
-        with pytest.raises(RuneError):
+        with pytest.raises(JaasError):
             store.delete_file(draft.id, "../../../etc/passwd")

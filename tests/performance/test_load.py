@@ -12,7 +12,7 @@ Tuning changes this test drove (implementation-plan.md Phase 7 task 2):
 1. `observability/tracing.py`'s default SimpleSpanProcessor exports every
    span synchronously on the request thread; under concurrency this alone
    pushed search p95 well past budget. `build_tracer(batch=True)` (now the
-   default for `create_app`, `runectl serve`, and `runectl publish`) moves
+   default for `create_app`, `jaasctl serve`, and `jaasctl publish`) moves
    export off-thread via BatchSpanProcessor.
 2. `index/semver_resolver.py`'s `resolve_version` re-parsed every version
    string from scratch on every call. Search re-resolves every skill in the
@@ -41,11 +41,11 @@ import httpx
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from rune_registry.api.app import create_app
-from rune_registry.common.config import Settings
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.observability.tracing import build_tracer
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.common.config import Settings
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.observability.tracing import build_tracer
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.index_entries import make_entry
 
 CORPUS_SIZE = 2000

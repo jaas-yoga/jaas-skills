@@ -1,4 +1,4 @@
-from rune_registry.observability import metrics as m
+from jaas_registry.observability import metrics as m
 
 
 def _samples(collector):

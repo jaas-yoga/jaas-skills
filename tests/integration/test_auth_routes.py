@@ -3,13 +3,13 @@ from dataclasses import dataclass
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.api.deps import get_google_verifier
-from rune_registry.authn.google import GoogleIdentity
-from rune_registry.common.config import Settings
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.api.deps import get_google_verifier
+from jaas_registry.authn.google import GoogleIdentity
+from jaas_registry.common.config import Settings
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class FakeGoogleIdentityVerifier:
 
     def verify(self, google_id_token_jwt: str) -> GoogleIdentity:
         if google_id_token_jwt != "valid-token":
-            raise RuneError(ErrorCode.INVALID_GOOGLE_TOKEN, "bad token")
+            raise JaasError(ErrorCode.INVALID_GOOGLE_TOKEN, "bad token")
         return self.identity
 
 

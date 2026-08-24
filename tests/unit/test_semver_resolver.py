@@ -1,4 +1,4 @@
-from rune_registry.index.semver_resolver import resolve_version
+from jaas_registry.index.semver_resolver import resolve_version
 
 
 def test_resolve_stable_by_default_picks_highest_non_prerelease():

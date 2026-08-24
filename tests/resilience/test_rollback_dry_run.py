@@ -12,15 +12,15 @@ without any data migration step.
 from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from rune_registry.api.app import create_app
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.config import Settings
-from rune_registry.index.bootstrap import bootstrap_index
-from rune_registry.observability.tracing import build_tracer
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.config import Settings
+from jaas_registry.index.bootstrap import bootstrap_index
+from jaas_registry.observability.tracing import build_tracer
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
 

@@ -1,7 +1,7 @@
 import pytest
 
-from rune_registry.authn.repo_links import RepoLinkStore
-from rune_registry.common.errors import RuneError
+from jaas_registry.authn.repo_links import RepoLinkStore
+from jaas_registry.common.errors import JaasError
 
 
 def test_create_then_get_round_trips(tmp_path):
@@ -32,7 +32,7 @@ def test_list_for_tenant_is_isolated_per_tenant(tmp_path):
 def test_create_rejects_duplicate_within_same_tenant(tmp_path):
     store = RepoLinkStore(tmp_path)
     store.create(tenant_id="tnt_1", skill_id="acme.tool.x", repo_url="u1", created_by="usr_1")
-    with pytest.raises(RuneError, match="already linked"):
+    with pytest.raises(JaasError, match="already linked"):
         store.create(tenant_id="tnt_1", skill_id="acme.tool.x", repo_url="u2", created_by="usr_1")
 
 
@@ -42,7 +42,7 @@ def test_create_rejects_skill_id_already_claimed_by_another_tenant(tmp_path):
     they own the right to release the same skill id."""
     store = RepoLinkStore(tmp_path)
     store.create(tenant_id="tnt_1", skill_id="acme.tool.x", repo_url="u1", created_by="usr_1")
-    with pytest.raises(RuneError, match="different tenant"):
+    with pytest.raises(JaasError, match="different tenant"):
         store.create(tenant_id="tnt_2", skill_id="acme.tool.x", repo_url="u2", created_by="usr_2")
 
 
@@ -59,7 +59,7 @@ def test_delete_removes_link(tmp_path):
 
 
 def test_release_branches_default_to_empty():
-    from rune_registry.authn.repo_links import RepoLink
+    from jaas_registry.authn.repo_links import RepoLink
 
     link = RepoLink(
         id="lnk_1",
@@ -123,7 +123,7 @@ def test_update_release_branches_replaces_the_list(tmp_path):
 
 def test_update_release_branches_raises_when_link_missing(tmp_path):
     store = RepoLinkStore(tmp_path)
-    with pytest.raises(RuneError, match="no repo link"):
+    with pytest.raises(JaasError, match="no repo link"):
         store.update_release_branches(
             tenant_id="tnt_1", skill_id="acme.tool.x", release_branches=("main",)
         )
@@ -141,7 +141,7 @@ def test_update_release_branches_cannot_reach_another_tenants_link(tmp_path):
         created_by="usr_1",
         release_branches=("main",),
     )
-    with pytest.raises(RuneError, match="no repo link"):
+    with pytest.raises(JaasError, match="no repo link"):
         store.update_release_branches(
             tenant_id="tnt_2", skill_id="acme.tool.x", release_branches=("evil",)
         )

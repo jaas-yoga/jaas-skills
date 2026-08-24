@@ -2,7 +2,7 @@
 
 implementation-plan.md Phase 7 task 4. Each test models a specific attack an
 adversary might try against the JWT/scope layer, asserting it is rejected
-with RuneError(UNAUTHORIZED) — never silently accepted, never an unhandled
+with JaasError(UNAUTHORIZED) — never silently accepted, never an unhandled
 exception leaking internals.
 """
 
@@ -12,9 +12,9 @@ import json
 import jwt
 import pytest
 
-from rune_registry.authz.jwt_validation import decode_token
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.authz.jwt_validation import decode_token
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.errors import ErrorCode, JaasError
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
 
 
@@ -42,7 +42,7 @@ def test_alg_none_attack_is_rejected():
     )
     forged_token = f"{header}.{payload}."
 
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -54,7 +54,7 @@ def test_token_missing_expiry_claim_is_rejected():
         DEFAULT_SECRET,
         algorithm="HS256",
     )
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -69,7 +69,7 @@ def test_payload_tampering_after_signing_is_rejected():
     tampered_payload["scope"] = "fs:read fs:write network:egress admin:*"
     forged_token = f"{header_b64}.{_b64url(tampered_payload)}.{signature_b64}"
 
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -78,7 +78,7 @@ def test_signed_with_wrong_secret_is_rejected():
     """A token an attacker signs themselves, with a guessed/leaked-elsewhere
     secret, must not verify against our actual secret."""
     forged_token = make_token(secret="a-completely-different-attacker-controlled-secret!!")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -87,7 +87,7 @@ def test_issuer_substitution_is_rejected():
     """A token legitimately issued by some *other* trusted-elsewhere issuer
     must not be accepted here just because it's otherwise well-formed."""
     forged_token = make_token(issuer="some-other-companys-idp")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -96,14 +96,14 @@ def test_audience_substitution_is_rejected():
     """A token minted for a different downstream service must not be replayed
     against this registry (classic token-passthrough confusion attack)."""
     forged_token = make_token(audience="some-other-service")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         _decode(forged_token)
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
 
 def test_empty_bearer_token_is_rejected():
     authorizer = _authorizer()
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token="", tenant_header=None, required_permissions=("fs:read",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -113,7 +113,7 @@ def test_scope_prefix_confusion_does_not_grant_unrelated_permission():
     (naive substring/startswith matching would fall for this)."""
     authorizer = _authorizer()
     token = make_token(scopes=("fs:readiness",))
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=token, tenant_header=None, required_permissions=("fs:read",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -122,7 +122,7 @@ def test_wildcard_scope_does_not_leak_across_top_level_namespaces():
     """'fs:*' must not satisfy a requirement in a totally different namespace."""
     authorizer = _authorizer()
     token = make_token(scopes=("fs:*",))
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=token, tenant_header=None, required_permissions=("admin:full",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -137,7 +137,7 @@ def test_tenant_boundary_cannot_be_bypassed_by_omitting_tenant_header():
         enforce_tenant_boundary=True,
     )
     token = make_token(scopes=("fs:read",), tenant="tenant-a")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=token, tenant_header=None, required_permissions=("fs:read",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -146,6 +146,6 @@ def test_malformed_token_does_not_crash_with_unhandled_exception():
     """Garbage input at the auth boundary must degrade to a clean 401/403-style
     rejection, never an unhandled exception that could leak a stack trace."""
     for garbage in ("", "not.a.jwt", "a" * 10_000, "🎉.🎉.🎉", "..", "null"):
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             _decode(garbage)
         assert exc_info.value.code == ErrorCode.UNAUTHORIZED

@@ -8,14 +8,14 @@ import copy
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.errors import RuneError
-from rune_registry.observability.tracing import build_tracer
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.errors import JaasError
+from jaas_registry.observability.tracing import build_tracer
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
@@ -28,7 +28,7 @@ def test_authz_denial_annotates_the_active_span():
         secret=DEFAULT_SECRET, issuer=DEFAULT_ISSUER, audience=DEFAULT_AUDIENCE
     )
 
-    with tracer.start_as_current_span("request"), pytest.raises(RuneError):
+    with tracer.start_as_current_span("request"), pytest.raises(JaasError):
         authorizer.check(token=None, tenant_header=None, required_permissions=())
 
     span = exporter.get_finished_spans()[0]
@@ -44,7 +44,7 @@ def test_publish_validation_failure_annotates_the_active_span(tmp_path):
     bad_manifest["version"] = "not-semver"
     write_package_dir(tmp_path / "pkg", manifest=bad_manifest)
 
-    with tracer.start_as_current_span("runectl.publish"), pytest.raises(RuneError):
+    with tracer.start_as_current_span("jaasctl.publish"), pytest.raises(JaasError):
         publish_skill(
             source_dir=tmp_path / "pkg",
             store=LocalFilesystemStore(tmp_path / "storage"),
@@ -65,7 +65,7 @@ def test_storage_spans_nest_under_the_publish_span(tmp_path):
     store = LocalFilesystemStore(tmp_path / "storage", tracer=tracer)
 
     write_package_dir(tmp_path / "pkg")
-    with tracer.start_as_current_span("runectl.publish") as parent:
+    with tracer.start_as_current_span("jaasctl.publish") as parent:
         publish_skill(
             source_dir=tmp_path / "pkg",
             store=store,

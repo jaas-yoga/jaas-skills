@@ -1,4 +1,4 @@
-from rune_registry.authn.pat import PatStore
+from jaas_registry.authn.pat import PatStore
 
 
 def test_create_and_get(tmp_path):

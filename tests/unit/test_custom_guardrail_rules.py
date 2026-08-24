@@ -1,7 +1,7 @@
 import pytest
 
-from rune_registry.common.errors import RuneError
-from rune_registry.guardrails.custom_rules import (
+from jaas_registry.common.errors import JaasError
+from jaas_registry.guardrails.custom_rules import (
     MAX_RULES_PER_TENANT,
     CustomGuardrailRuleStore,
     make_id,
@@ -53,7 +53,7 @@ def test_list_for_tenant_is_isolated_per_tenant(tmp_path):
 
 def test_put_rejects_invalid_slug(tmp_path):
     store = CustomGuardrailRuleStore(tmp_path)
-    with pytest.raises(RuneError, match="not a valid rule slug"):
+    with pytest.raises(JaasError, match="not a valid rule slug"):
         _put(store, slug="Not A Slug!")
 
 
@@ -74,7 +74,7 @@ def test_put_enforces_per_tenant_rule_limit(tmp_path):
     for i in range(MAX_RULES_PER_TENANT):
         _put(store, slug=f"rule-{i}")
 
-    with pytest.raises(RuneError, match="maximum"):
+    with pytest.raises(JaasError, match="maximum"):
         _put(store, slug="one-too-many")
 
 

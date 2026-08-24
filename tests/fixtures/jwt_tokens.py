@@ -3,8 +3,8 @@ import time
 import jwt
 
 DEFAULT_SECRET = "dev-only-shared-secret-not-for-prod!!"  # >= 32 bytes for HS256 (RFC 7518 §3.2)
-DEFAULT_ISSUER = "rune-registry-dev"
-DEFAULT_AUDIENCE = "rune-registry"
+DEFAULT_ISSUER = "jaas-registry-dev"
+DEFAULT_AUDIENCE = "jaas-registry"
 
 
 def make_token(

@@ -5,8 +5,8 @@ attempted) is independently exercisable."""
 
 from __future__ import annotations
 
-from rune_registry.guardrails.certification import CertificationStatus, compute_certification
-from rune_registry.guardrails.models import (
+from jaas_registry.guardrails.certification import CertificationStatus, compute_certification
+from jaas_registry.guardrails.models import (
     GuardrailDefinition,
     GuardrailFinding,
     GuardrailLevel,

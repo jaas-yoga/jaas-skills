@@ -1,8 +1,8 @@
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.observability.tracing import annotate_current_span_error, build_tracer
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.observability.tracing import annotate_current_span_error, build_tracer
 
 
 def test_build_tracer_produces_spans_via_supplied_exporter():
@@ -20,19 +20,19 @@ def test_build_tracer_produces_spans_via_supplied_exporter():
 
 def test_build_tracer_tags_service_name():
     exporter = InMemorySpanExporter()
-    tracer = build_tracer(service_name="rune-registry-test", exporter=exporter)
+    tracer = build_tracer(service_name="jaas-registry-test", exporter=exporter)
 
     with tracer.start_as_current_span("demo"):
         pass
 
     span = exporter.get_finished_spans()[0]
-    assert span.resource.attributes["service.name"] == "rune-registry-test"
+    assert span.resource.attributes["service.name"] == "jaas-registry-test"
 
 
 def test_annotate_current_span_error_records_event_and_error_status():
     exporter = InMemorySpanExporter()
     tracer = build_tracer(exporter=exporter)
-    exc = RuneError(ErrorCode.INVALID_ID_FORMAT, "id is malformed")
+    exc = JaasError(ErrorCode.INVALID_ID_FORMAT, "id is malformed")
 
     with tracer.start_as_current_span("demo"):
         annotate_current_span_error(exc)
@@ -45,5 +45,5 @@ def test_annotate_current_span_error_records_event_and_error_status():
 
 
 def test_annotate_current_span_error_is_a_safe_noop_without_an_active_span():
-    exc = RuneError(ErrorCode.INVALID_ID_FORMAT, "id is malformed")
+    exc = JaasError(ErrorCode.INVALID_ID_FORMAT, "id is malformed")
     annotate_current_span_error(exc)  # must not raise

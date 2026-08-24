@@ -1,4 +1,4 @@
-from rune_registry.authz.scopes import has_all_required_scopes, scope_covers
+from jaas_registry.authz.scopes import has_all_required_scopes, scope_covers
 
 
 def test_exact_scope_match():

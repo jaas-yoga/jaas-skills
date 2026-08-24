@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.validation.package import validate_skill_package
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.validation.package import validate_skill_package
 from tests.fixtures.manifests import (
     VALID_DEPENDENCIES,
     VALID_IO_SCHEMA,
@@ -28,7 +28,7 @@ def test_valid_package_validates_all_four_documents():
 def test_invalid_manifest_fails_the_whole_package():
     bad_manifest = copy.deepcopy(VALID_MANIFEST)
     bad_manifest["version"] = "not-semver"
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         validate_skill_package(
             manifest=bad_manifest,
             io_schema=VALID_IO_SCHEMA,

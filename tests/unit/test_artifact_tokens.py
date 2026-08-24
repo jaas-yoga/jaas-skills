@@ -1,6 +1,6 @@
 import time
 
-from rune_registry.artifact.tokens import ArtifactTokenIssuer
+from jaas_registry.artifact.tokens import ArtifactTokenIssuer
 
 DIGEST = "sha256:" + "a" * 64
 SIGNATURE = "sig"

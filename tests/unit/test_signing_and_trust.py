@@ -1,5 +1,5 @@
-from rune_registry.artifact.signing import generate_dev_keypair, load_or_create_keypair, sign_digest
-from rune_registry.artifact.trust import TrustPolicy, ensure_key_registered, load_trust_policy
+from jaas_registry.artifact.signing import generate_dev_keypair, load_or_create_keypair, sign_digest
+from jaas_registry.artifact.trust import TrustPolicy, ensure_key_registered, load_trust_policy
 
 
 def test_signature_verifies_against_matching_public_key():

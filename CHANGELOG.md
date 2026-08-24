@@ -1,14 +1,14 @@
 # Changelog
 
 Feature-level record of what's shipped, newest first. Each entry names
-every repo it touched — this is a two-repo system (`rune_skills` backend +
-`rune_ui` frontend), plus the standalone `rune_guardrails` scanning
+every repo it touched — this is a two-repo system (`jaas_skills` backend +
+`jaas_ui` frontend), plus the standalone `jaas_guardrails` scanning
 service where noted. Nothing here has been released as a version tag; this
 tracks what's running in the local dev stack (`run.sh`).
 
 ## Fix: A Publish Was Invisible to Search/Metadata Until the Server Restarted
 
-*Repo: `rune_skills`.*
+*Repo: `jaas_skills`.*
 
 `publish_skill()` only ever wrote the blob/tag to object storage — the
 running `api` process's in-memory search index (`InMemoryIndex`) was only
@@ -32,7 +32,7 @@ alone for whenever a real multi-replica setup exists.
 
 ## Guardrail Certification Pipeline
 
-*Repos: `rune_skills`, `rune_ui`. `rune_guardrails`: unchanged.*
+*Repos: `jaas_skills`, `jaas_ui`. `jaas_guardrails`: unchanged.*
 
 Every publish now computes a **persisted, queryable certification** —
 previously a guardrail WARN finding only ever reached a structured log
@@ -78,7 +78,7 @@ level?"
 
 ## Per-Skill Git Directories
 
-*Repo: `rune_skills`.*
+*Repo: `jaas_skills`.*
 
 One GitHub repo can now host multiple skills without their files
 colliding at the root. Every new git-connected draft commits its files
@@ -95,7 +95,7 @@ instead of the repo root, from its very first commit.
 
 ## Draft Saves: Commit-Message-Gated Git Sync
 
-*Repo: `rune_skills`, `rune_ui`.*
+*Repo: `jaas_skills`, `jaas_ui`.*
 
 Every keystroke-driven autosave used to push a commit to the connected
 repo — noisy, unreviewable history. Now:
@@ -111,7 +111,7 @@ repo — noisy, unreviewable history. Now:
 
 ## Draft Editor: Folder-Aware File Creation + Drag-and-Drop Upload
 
-*Repo: `rune_ui`.*
+*Repo: `jaas_ui`.*
 
 - "New File" now offers a folder destination picker when the draft already
   has folders, instead of requiring the folder path to be typed by hand.
@@ -122,7 +122,7 @@ repo — noisy, unreviewable history. Now:
 
 ## Draft Editor: Full Syntax Highlighting by File Type
 
-*Repo: `rune_ui`.*
+*Repo: `jaas_ui`.*
 
 Monaco's language mode was already wired per-file but the extension map
 only covered the exact canonical package files. Broadened to shell
@@ -134,7 +134,7 @@ name — `.py`/`.md`/`.yaml`/`.json` already worked correctly.
 
 ## Draft Editor: FILES Panel Scroll Fix
 
-*Repo: `rune_ui`.*
+*Repo: `jaas_ui`.*
 
 The workspace's outer height was computed with a fragile
 `calc(100dvh-3.5rem)` that double-counted the page's own padding,
@@ -146,7 +146,7 @@ starving the FILES panel of the height it needed for its own
 
 ## Create Skill: Inline Destination/Repo/Branch Picker
 
-*Repo: `rune_ui`.*
+*Repo: `jaas_ui`.*
 
 Replaced the card-based "where should this draft live?" modal dialog with
 an inline panel (no popup) with chained dropdowns: Local vs. GitHub repo,
@@ -159,7 +159,7 @@ on the same row as the fields.
 
 ## Git-Backed Drafts: Empty-Repo Bootstrap Fix
 
-*Repo: `rune_skills`.*
+*Repo: `jaas_skills`.*
 
 GitHub's Git Data API (blob/tree/commit) cannot write anything — not even
 an empty tree — to a repository with zero commits; every attempt 409s.
@@ -172,7 +172,7 @@ seed a brand-new repo's first commit.
 
 ## Drafts List: Show the Skill's Name, Not the Draft ID
 
-*Repo: `rune_skills`, `rune_ui`.*
+*Repo: `jaas_skills`, `jaas_ui`.*
 
 The drafts list used to show the opaque `draft_<uuid>` id as the primary
 label. Now shows `manifest.yaml`'s own `id` (read live off local disk, so

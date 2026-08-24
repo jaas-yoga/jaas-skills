@@ -1,4 +1,4 @@
-"""runectl release / runectl guardrails push|validate — pure HTTP clients
+"""jaasctl release / jaasctl guardrails push|validate — pure HTTP clients
 of the backend API and the guardrails service respectively, so these
 tests monkeypatch httpx instead of standing up a real server."""
 
@@ -8,14 +8,14 @@ import json
 
 import pytest
 
-from rune_registry.cli import main
+from jaas_registry.cli import main
 from tests.fixtures.package_dir import write_package_dir
 
 
 @pytest.fixture(autouse=True)
 def _isolated_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("RUNE_STORAGE_ROOT", str(tmp_path / "storage"))
-    monkeypatch.setenv("RUNE_POLICY_DIR", str(tmp_path / "policy"))
+    monkeypatch.setenv("JAAS_STORAGE_ROOT", str(tmp_path / "storage"))
+    monkeypatch.setenv("JAAS_POLICY_DIR", str(tmp_path / "policy"))
 
 
 class _FakeResponse:
@@ -72,7 +72,7 @@ class TestCmdRelease:
 
         main(["release", str(tmp_path / "pkg"), "--tag", "v1.0.0", "--oidc-token", "eyOIDC"])
 
-        assert captured["headers"] == {"X-Rune-OIDC-Token": "eyOIDC"}
+        assert captured["headers"] == {"X-Jaas-OIDC-Token": "eyOIDC"}
 
     def test_release_branch_is_included_in_the_request_body(self, tmp_path, monkeypatch):
         write_package_dir(tmp_path / "pkg")

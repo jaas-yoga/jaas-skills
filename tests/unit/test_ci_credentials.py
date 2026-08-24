@@ -5,16 +5,16 @@ import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from rune_registry.authn.ci_credentials import (
+from jaas_registry.authn.ci_credentials import (
     GITHUB_OIDC_ISSUER,
     CiIdentity,
     GitHubOidcVerifier,
     resolve_release_tenant,
 )
-from rune_registry.authn.repo_links import RepoLinkStore
-from rune_registry.common.errors import RuneError
+from jaas_registry.authn.repo_links import RepoLinkStore
+from jaas_registry.common.errors import JaasError
 
-AUDIENCE = "rune-registry"
+AUDIENCE = "jaas-registry"
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +66,7 @@ class TestGitHubOidcVerifier:
         verifier = GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key))
         token = _make_token(private_key, aud="some-other-service")
 
-        with pytest.raises(RuneError, match="invalid OIDC token"):
+        with pytest.raises(JaasError, match="invalid OIDC token"):
             verifier.verify(token, audience=AUDIENCE)
 
     def test_rejects_wrong_issuer(self, rsa_keypair):
@@ -74,7 +74,7 @@ class TestGitHubOidcVerifier:
         verifier = GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key))
         token = _make_token(private_key, iss="https://not-github.example.com")
 
-        with pytest.raises(RuneError, match="invalid OIDC token"):
+        with pytest.raises(JaasError, match="invalid OIDC token"):
             verifier.verify(token, audience=AUDIENCE)
 
     def test_rejects_expired_token(self, rsa_keypair):
@@ -82,7 +82,7 @@ class TestGitHubOidcVerifier:
         verifier = GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key))
         token = _make_token(private_key, exp=int(time.time()) - 10)
 
-        with pytest.raises(RuneError, match="invalid OIDC token"):
+        with pytest.raises(JaasError, match="invalid OIDC token"):
             verifier.verify(token, audience=AUDIENCE)
 
     def test_rejects_branch_ref_not_tag_ref(self, rsa_keypair):
@@ -92,7 +92,7 @@ class TestGitHubOidcVerifier:
         verifier = GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key))
         token = _make_token(private_key, sub="repo:acme/tool-x:ref:refs/heads/main")
 
-        with pytest.raises(RuneError, match="not a tag-triggered"):
+        with pytest.raises(JaasError, match="not a tag-triggered"):
             verifier.verify(token, audience=AUDIENCE)
 
     def test_captures_the_environment_claim_when_present(self, rsa_keypair):
@@ -126,7 +126,7 @@ class TestGitHubOidcVerifier:
         verifier = GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key))
         token = _make_token(other_private_key)
 
-        with pytest.raises(RuneError, match="invalid OIDC token"):
+        with pytest.raises(JaasError, match="invalid OIDC token"):
             verifier.verify(token, audience=AUDIENCE)
 
 
@@ -163,7 +163,7 @@ class TestResolveReleaseTenant:
 
     def test_raises_repo_link_required_when_no_link_exists(self, tmp_path):
         store = RepoLinkStore(tmp_path)
-        with pytest.raises(RuneError, match="no registered repo link"):
+        with pytest.raises(JaasError, match="no registered repo link"):
             resolve_release_tenant(
                 identity=CiIdentity(repo="acme/tool-x", tag="v1.2.3"),
                 skill_id="acme.tool.x",
@@ -178,7 +178,7 @@ class TestResolveReleaseTenant:
             repo_url="https://github.com/acme/a-different-repo",
             created_by="usr_1",
         )
-        with pytest.raises(RuneError, match="different repository"):
+        with pytest.raises(JaasError, match="different repository"):
             resolve_release_tenant(
                 identity=CiIdentity(repo="acme/tool-x", tag="v1.2.3"),
                 skill_id="acme.tool.x",

@@ -16,13 +16,13 @@ import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.authn.ci_credentials import GITHUB_OIDC_ISSUER, GitHubOidcVerifier
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.config import Settings
-from rune_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.authn.ci_credentials import GITHUB_OIDC_ISSUER, GitHubOidcVerifier
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.config import Settings
+from jaas_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_github_client import FakeGitHubApiClient
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
@@ -33,7 +33,7 @@ from tests.fixtures.manifests import (
     VALID_PERMISSIONS,
 )
 
-AUDIENCE = "rune-registry"
+AUDIENCE = "jaas-registry"
 
 
 @dataclass
@@ -161,8 +161,8 @@ class TestPatAuthPath:
         registered the repo link), never the repo URL string used for
         `actor`/provenance — otherwise no real user would ever satisfy the
         web UI's isOwner check for a git-released skill."""
-        from rune_registry.index.ingest import parse_published_record
-        from rune_registry.storage.keys import tag_key
+        from jaas_registry.index.ingest import parse_published_record
+        from jaas_registry.storage.keys import tag_key
 
         token, body = _link_headers_and_body(client)
 
@@ -427,7 +427,7 @@ class TestSourceFilesBrowsing:
 
 class TestOidcAuthPath:
     def _headers(self, token: str, private_key, **claim_overrides) -> dict:
-        return {"X-Rune-OIDC-Token": _oidc_token(private_key, **claim_overrides)}
+        return {"X-Jaas-OIDC-Token": _oidc_token(private_key, **claim_overrides)}
 
     def test_successful_release_via_oidc(self, client, rsa_keypair):
         private_key, _ = rsa_keypair

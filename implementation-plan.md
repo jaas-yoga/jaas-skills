@@ -222,7 +222,7 @@ Note: Phase 2 overlaps Phase 1 by one week. Only packaging/signing groundwork (t
 Local-prototype note: tasks 1-4 are implemented as real, tested code
 (`observability/logging.py`, `metrics.py`, `tracing.py`, `alerts.py`, wired
 through `api/middleware.py` and the affected modules) and verified against a
-live `runectl serve` process. Exit criteria 1-2 need a real dashboard (Grafana)
+live `jaasctl serve` process. Exit criteria 1-2 need a real dashboard (Grafana)
 and an on-call rotation to validate against — outside what a local repo can
 exercise; `evaluate_all()` in `alerts.py` is the evaluation logic those
 dashboards/runbooks would consume, stopping short of the paging integration.

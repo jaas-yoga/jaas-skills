@@ -1,5 +1,5 @@
-from rune_registry.sharing.grants import GrantStore
-from rune_registry.sharing.models import GranteeType, SharePermission
+from jaas_registry.sharing.grants import GrantStore
+from jaas_registry.sharing.models import GranteeType, SharePermission
 
 
 def test_create_and_list_for_skill(tmp_path):

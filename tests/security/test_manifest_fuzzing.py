@@ -2,7 +2,7 @@
 
 implementation-plan.md Phase 7 task 4. The property under test throughout is
 robustness, not any particular acceptance/rejection outcome: validation must
-always resolve to a `RuneError` with a stable code, never an unhandled
+always resolve to a `JaasError` with a stable code, never an unhandled
 exception (which could crash a worker or leak internals), and never hang
 (regex/parsing denial-of-service).
 """
@@ -15,8 +15,8 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from rune_registry.common.errors import RuneError
-from rune_registry.validation.rules import (
+from jaas_registry.common.errors import JaasError
+from jaas_registry.validation.rules import (
     validate_dependencies,
     validate_io_schema,
     validate_manifest,
@@ -46,7 +46,7 @@ _SUITE_SETTINGS = settings(
 def test_validate_manifest_never_raises_unhandled_exception(data):
     try:
         validate_manifest(data)
-    except RuneError:
+    except JaasError:
         pass  # the only acceptable rejection
 
 
@@ -55,7 +55,7 @@ def test_validate_manifest_never_raises_unhandled_exception(data):
 def test_validate_dependencies_never_raises_unhandled_exception(data):
     try:
         validate_dependencies(data)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -64,7 +64,7 @@ def test_validate_dependencies_never_raises_unhandled_exception(data):
 def test_validate_permissions_never_raises_unhandled_exception(data):
     try:
         validate_permissions(data)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -73,7 +73,7 @@ def test_validate_permissions_never_raises_unhandled_exception(data):
 def test_validate_io_schema_never_raises_unhandled_exception(data):
     try:
         validate_io_schema(data)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -96,7 +96,7 @@ def test_id_regex_never_hangs_on_adversarial_input(candidate_id):
     manifest = dict(VALID_MANIFEST_SHAPE, id=candidate_id, version="1.0.0")
     try:
         validate_manifest(manifest)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -109,7 +109,7 @@ def test_id_regex_never_hangs_on_pathological_dash_repetition(n):
     manifest = dict(VALID_MANIFEST_SHAPE, id="a" + "-" * n, version="1.0.0")
     try:
         validate_manifest(manifest)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -119,7 +119,7 @@ def test_version_parsing_never_hangs_on_adversarial_input(candidate_version):
     manifest = dict(VALID_MANIFEST_SHAPE, id="acme.text.summarizer", version=candidate_version)
     try:
         validate_manifest(manifest)
-    except RuneError:
+    except JaasError:
         pass
 
 
@@ -137,11 +137,11 @@ def test_version_parsing_never_hangs_on_adversarial_input(candidate_version):
 )
 def test_known_hostile_id_payloads_are_cleanly_rejected(hostile_id):
     manifest = dict(VALID_MANIFEST_SHAPE, id=hostile_id, version="1.0.0")
-    with pytest.raises(RuneError):
+    with pytest.raises(JaasError):
         validate_manifest(manifest)
 
 
 def test_non_dict_top_level_input_is_rejected_not_crashed():
     for garbage in (None, [], "just a string", 42, 3.14, True):
-        with pytest.raises(RuneError):
+        with pytest.raises(JaasError):
             validate_manifest(garbage)

@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import time
 
-from rune_registry.index.bootstrap import bootstrap_index
-from rune_registry.index.ingest import serialize_published_record
-from rune_registry.storage.keys import tag_key
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
-from rune_registry.validation.models import DependenciesDocument, PermissionsDocument
-from rune_registry.validation.rules import validate_manifest
+from jaas_registry.index.bootstrap import bootstrap_index
+from jaas_registry.index.ingest import serialize_published_record
+from jaas_registry.storage.keys import tag_key
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.validation.models import DependenciesDocument, PermissionsDocument
+from jaas_registry.validation.rules import validate_manifest
 from tests.fixtures.manifests import VALID_MANIFEST
 
 SAMPLE_SIZE = 5000

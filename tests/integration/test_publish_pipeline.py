@@ -2,17 +2,17 @@ import copy
 
 import pytest
 
-from rune_registry.artifact.packaging import extract_archive
-from rune_registry.artifact.publish import publish_skill
-from rune_registry.artifact.signing import generate_dev_keypair
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.artifact.verify import verify_artifact
-from rune_registry.common.audit import InMemoryAuditSink
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
-from rune_registry.guardrails.policy import GuardrailPolicy
-from rune_registry.storage.keys import tag_key as make_tag_key
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.artifact.packaging import extract_archive
+from jaas_registry.artifact.publish import publish_skill
+from jaas_registry.artifact.signing import generate_dev_keypair
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.artifact.verify import verify_artifact
+from jaas_registry.common.audit import InMemoryAuditSink
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
+from jaas_registry.guardrails.policy import GuardrailPolicy
+from jaas_registry.storage.keys import tag_key as make_tag_key
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
@@ -73,7 +73,7 @@ def test_duplicate_publish_returns_409(rig):
         actor="ci-pipeline",
         audit_sink=rig["audit_sink"],
     )
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         publish_skill(
             source_dir=rig["source_dir"],
             store=rig["store"],
@@ -96,7 +96,7 @@ def test_tampered_archive_is_rejected_at_reverification(rig):
         audit_sink=rig["audit_sink"],
     )
     tampered_archive = rig["store"].read(result.blob_key) + b"tampered-bytes"
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=tampered_archive,
             digest=result.manifest.digest,
@@ -119,7 +119,7 @@ def test_signature_from_untrusted_key_is_rejected(rig):
     other_keypair = generate_dev_keypair()
     attacker_trust_policy = TrustPolicy(trusted_public_keys_pem=[other_keypair.public_key_pem()])
     archive = rig["store"].read(result.blob_key)
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=archive,
             digest=result.manifest.digest,
@@ -189,7 +189,7 @@ def test_publish_rejects_a_path_traversing_entrypoint(rig, bad_entrypoint):
 
 def test_missing_dependency_rejected(rig):
     write_package_dir(rig["source_dir"])
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         publish_skill(
             source_dir=rig["source_dir"],
             store=rig["store"],
@@ -212,7 +212,7 @@ def test_circular_dependency_rejected(rig):
     )
     # tokenizer already published and depends back on summarizer -> cycle
     existing_graph = {"acme.util.tokenizer": ["acme.text.summarizer"]}
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         publish_skill(
             source_dir=rig["source_dir"],
             store=rig["store"],
@@ -226,7 +226,7 @@ def test_circular_dependency_rejected(rig):
 
 
 def test_mandatory_guardrail_blocks_publish_and_writes_nothing(rig):
-    """Detection logic itself lives in the standalone rune-guardrails
+    """Detection logic itself lives in the standalone jaas-guardrails
     service's own test suite — this only verifies publish_skill's wiring:
     a BLOCK finding from the client stops the publish before anything is
     written, regardless of what produced that finding."""
@@ -244,7 +244,7 @@ def test_mandatory_guardrail_blocks_publish_and_writes_nothing(rig):
             warnings=(),
         )
     )
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         publish_skill(
             source_dir=rig["source_dir"],
             store=rig["store"],

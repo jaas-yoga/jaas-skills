@@ -11,14 +11,14 @@ user in production, since AuthService is the only thing that mints tokens).
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.api.deps import get_google_verifier
-from rune_registry.authn.google import GoogleIdentity
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.config import Settings
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.api.deps import get_google_verifier
+from jaas_registry.authn.google import GoogleIdentity
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.config import Settings
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
 
@@ -33,7 +33,7 @@ class FakeGoogleIdentityVerifier:
     def verify(self, google_id_token_jwt: str) -> GoogleIdentity:
         identity = self._identities.get(google_id_token_jwt)
         if identity is None:
-            raise RuneError(ErrorCode.INVALID_GOOGLE_TOKEN, "unknown test token")
+            raise JaasError(ErrorCode.INVALID_GOOGLE_TOKEN, "unknown test token")
         return identity
 
 

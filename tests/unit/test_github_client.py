@@ -10,8 +10,8 @@ import json
 import httpx
 import pytest
 
-from rune_registry.authn.github_client import GitHubRepo, GitHubUser, HttpGitHubApiClient
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.authn.github_client import GitHubRepo, GitHubUser, HttpGitHubApiClient
+from jaas_registry.common.errors import ErrorCode, JaasError
 
 
 class _FakeResponse:
@@ -53,7 +53,7 @@ class TestExchangeCodeForToken:
             ),
         )
 
-        with pytest.raises(RuneError, match="did not return an access token"):
+        with pytest.raises(JaasError, match="did not return an access token"):
             api_client.exchange_code_for_token(
                 "code123", client_id="cid", client_secret="csecret", redirect_uri="https://x/cb"
             )
@@ -64,7 +64,7 @@ class TestExchangeCodeForToken:
 
         monkeypatch.setattr("httpx.post", _raise)
 
-        with pytest.raises(RuneError, match="GitHub API request failed"):
+        with pytest.raises(JaasError, match="GitHub API request failed"):
             api_client.exchange_code_for_token(
                 "code123", client_id="cid", client_secret="csecret", redirect_uri="https://x/cb"
             )
@@ -130,7 +130,7 @@ class TestListRepos:
 
         monkeypatch.setattr("httpx.get", _raise)
 
-        with pytest.raises(RuneError, match="GitHub API request failed"):
+        with pytest.raises(JaasError, match="GitHub API request failed"):
             api_client.list_repos("gho_abc")
 
 
@@ -219,7 +219,7 @@ class TestBootstrapEmptyRepo:
         assert base64.b64decode(body["content"]) == b"id: x"
 
     def test_raises_when_given_no_files(self, api_client):
-        with pytest.raises(RuneError, match="no files"):
+        with pytest.raises(JaasError, match="no files"):
             api_client.bootstrap_empty_repo(
                 "gho_abc", owner="acme", repo="tool-x", branch="main", changes={}
             )
@@ -230,7 +230,7 @@ class TestBootstrapEmptyRepo:
 
         monkeypatch.setattr("httpx.put", _raise)
 
-        with pytest.raises(RuneError, match="GitHub API request failed"):
+        with pytest.raises(JaasError, match="GitHub API request failed"):
             api_client.bootstrap_empty_repo(
                 "gho_abc",
                 owner="acme",
@@ -246,9 +246,9 @@ class TestCreateBranch:
             "httpx.post", lambda *a, **k: _FakeResponse(422, {"message": "already exists"})
         )
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             api_client.create_branch(
-                "gho_abc", owner="acme", repo="tool-x", branch="rune/draft/x", from_sha="abc123"
+                "gho_abc", owner="acme", repo="tool-x", branch="jaas/draft/x", from_sha="abc123"
             )
 
         assert exc_info.value.code == ErrorCode.DRAFT_GIT_BRANCH_EXISTS
@@ -342,7 +342,7 @@ class TestMergePullRequest:
             "httpx.put", lambda *a, **k: _FakeResponse(405, {"message": "not mergeable"})
         )
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             api_client.merge_pull_request("gho_abc", owner="acme", repo="tool-x", number=1)
 
         assert exc_info.value.code == ErrorCode.DRAFT_GIT_MERGE_CONFLICT

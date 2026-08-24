@@ -1,12 +1,12 @@
 import time
 
-from rune_registry.authn.models import TenantRole
-from rune_registry.authn.tokens import RefreshTokenStore, mint_access_token
-from rune_registry.authz.jwt_validation import decode_token
+from jaas_registry.authn.models import TenantRole
+from jaas_registry.authn.tokens import RefreshTokenStore, mint_access_token
+from jaas_registry.authz.jwt_validation import decode_token
 
 SECRET = "test-only-shared-secret-at-least-32-bytes!!"
-ISSUER = "rune-registry-test"
-AUDIENCE = "rune-registry"
+ISSUER = "jaas-registry-test"
+AUDIENCE = "jaas-registry"
 
 
 def test_minted_access_token_is_decodable_by_the_existing_validator():

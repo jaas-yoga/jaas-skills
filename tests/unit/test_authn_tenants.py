@@ -1,5 +1,5 @@
-from rune_registry.authn.models import TenantKind, TenantRole
-from rune_registry.authn.tenants import MembershipStore, TenantStore
+from jaas_registry.authn.models import TenantKind, TenantRole
+from jaas_registry.authn.tenants import MembershipStore, TenantStore
 
 
 def test_ensure_personal_tenant_is_idempotent(tmp_path):

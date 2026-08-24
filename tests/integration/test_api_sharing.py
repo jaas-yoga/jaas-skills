@@ -4,14 +4,14 @@ exercised over real HTTP requests, not just the underlying functions."""
 import pytest
 from fastapi.testclient import TestClient
 
-from rune_registry.api.app import create_app
-from rune_registry.authn.models import TenantRole
-from rune_registry.authn.tenants import MembershipStore
-from rune_registry.authz.policy import JwtAuthorizer
-from rune_registry.common.config import Settings
-from rune_registry.index.models import Visibility
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.api.app import create_app
+from jaas_registry.authn.models import TenantRole
+from jaas_registry.authn.tenants import MembershipStore
+from jaas_registry.authz.policy import JwtAuthorizer
+from jaas_registry.common.config import Settings
+from jaas_registry.index.models import Visibility
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.index_entries import make_entry
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
 

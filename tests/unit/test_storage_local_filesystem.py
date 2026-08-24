@@ -1,9 +1,9 @@
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from rune_registry.common.errors import ErrorCode, RuneError
-from rune_registry.observability.tracing import build_tracer
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.common.errors import ErrorCode, JaasError
+from jaas_registry.observability.tracing import build_tracer
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 
 
 def test_write_read_roundtrip(tmp_path):
@@ -16,7 +16,7 @@ def test_write_read_roundtrip(tmp_path):
 def test_write_tag_if_absent_rejects_duplicate(tmp_path):
     store = LocalFilesystemStore(tmp_path)
     store.write_tag_if_absent("tags/a.b.c/1.0.0/manifest.json", b"first")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         store.write_tag_if_absent("tags/a.b.c/1.0.0/manifest.json", b"second")
     assert exc_info.value.code == ErrorCode.DUPLICATE_PUBLISH
     # first write wins, untouched

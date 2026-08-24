@@ -1,5 +1,5 @@
-from rune_registry.observability import alerts
-from rune_registry.observability import metrics as m
+from jaas_registry.observability import alerts
+from jaas_registry.observability import metrics as m
 
 
 def test_no_alerts_on_clean_metrics(clean_metrics):

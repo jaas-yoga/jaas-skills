@@ -1,10 +1,10 @@
-from rune_registry.index.consumer import IndexEventConsumer
-from rune_registry.index.events import InMemoryEventBus, new_index_update_event
-from rune_registry.index.ingest import serialize_published_record
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.storage.local_filesystem import LocalFilesystemStore
-from rune_registry.validation.models import DependenciesDocument, PermissionsDocument
-from rune_registry.validation.rules import validate_manifest
+from jaas_registry.index.consumer import IndexEventConsumer
+from jaas_registry.index.events import InMemoryEventBus, new_index_update_event
+from jaas_registry.index.ingest import serialize_published_record
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.storage.local_filesystem import LocalFilesystemStore
+from jaas_registry.validation.models import DependenciesDocument, PermissionsDocument
+from jaas_registry.validation.rules import validate_manifest
 from tests.fixtures.manifests import VALID_MANIFEST
 
 SKILL_ID = VALID_MANIFEST["id"]

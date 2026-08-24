@@ -5,20 +5,20 @@ coverage across {public, private} x {no grant, user grant, tenant grant} x
 
 import pytest
 
-from rune_registry.authn.models import TenantRole
-from rune_registry.authn.pat import PatStore
-from rune_registry.authn.tenants import MembershipStore
-from rune_registry.common.config import Settings
-from rune_registry.index.models import Visibility
-from rune_registry.sharing.access import (
+from jaas_registry.authn.models import TenantRole
+from jaas_registry.authn.pat import PatStore
+from jaas_registry.authn.tenants import MembershipStore
+from jaas_registry.common.config import Settings
+from jaas_registry.index.models import Visibility
+from jaas_registry.sharing.access import (
     ANONYMOUS,
     CallerContext,
     can_manage_sharing,
     can_view,
     resolve_caller_context,
 )
-from rune_registry.sharing.grants import GrantStore
-from rune_registry.sharing.models import GranteeType, SharePermission
+from jaas_registry.sharing.grants import GrantStore
+from jaas_registry.sharing.models import GranteeType, SharePermission
 from tests.fixtures.index_entries import make_entry
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
 

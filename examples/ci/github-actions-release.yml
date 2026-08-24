@@ -1,11 +1,11 @@
 # Reference GitHub Actions workflow for a skill's own git repo (one repo
 # per skill — see README.md). Not wired into this app's own CI; copy it
-# into a skill repo's .github/workflows/ and adjust RUNE_API_URL.
+# into a skill repo's .github/workflows/ and adjust JAAS_API_URL.
 #
 # If instead one repo hosts several skills, each in its own subdirectory,
-# point `runectl release` at that subdirectory (e.g. `runectl release
-# jira.create_ticket ...` instead of `runectl release . ...` below) —
-# everything else about this workflow is unchanged. `runectl release`
+# point `jaasctl release` at that subdirectory (e.g. `jaasctl release
+# jira.create_ticket ...` instead of `jaasctl release . ...` below) —
+# everything else about this workflow is unchanged. `jaasctl release`
 # auto-detects the directory's path relative to the repo root (via `git
 # rev-parse --show-prefix`) and records it, so the registry's "browse full
 # source at this tag" feature on the published skill page shows only that
@@ -13,7 +13,7 @@
 #
 # Two jobs, matching the two-stage gate design.md/ROLLOUT.md describe:
 #
-#   validate  — runs on every PR. Fast, warn-level feedback: `runectl
+#   validate  — runs on every PR. Fast, warn-level feedback: `jaasctl
 #               validate` prints WARN lines for non-blocking guardrail
 #               findings but only fails the check (and therefore blocks
 #               merge, if this is set as a required status check in the
@@ -23,13 +23,13 @@
 #
 #   release   — runs only on a pushed tag matching v*.*.*. Uses GitHub
 #               Actions OIDC (no stored secret) to authenticate to the
-#               registry and calls `runectl release`, which always
+#               registry and calls `jaasctl release`, which always
 #               enforces guardrails — there is no opt-out on this path.
 #
 # Prerequisite: a tenant admin must register this repo for the skill's id
 # before the release job can succeed the first time —
 # POST /api/v1/tenants/{tenantId}/repo-links {"skillId": "...", "repoUrl": "..."}
-# (or via the tenant settings UI). Until that exists, `runectl release`
+# (or via the tenant settings UI). Until that exists, `jaasctl release`
 # fails with REPO_LINK_REQUIRED, not a silent success.
 #
 # Optional: multiple release lines. If the tenant admin restricted the
@@ -53,8 +53,8 @@ on:
       - "v*.*.*"
 
 env:
-  RUNE_API_URL: https://registry.example.com # set to your real deployment
-  RUNE_GUARDRAILS_SERVICE_URL: https://guardrails.example.com
+  JAAS_API_URL: https://registry.example.com # set to your real deployment
+  JAAS_GUARDRAILS_SERVICE_URL: https://guardrails.example.com
 
 jobs:
   validate:
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync
-      - run: uv run runectl validate .
+      - run: uv run jaasctl validate .
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -79,21 +79,21 @@ jobs:
 
       # actions/github-script exposes core.getIDToken(audience) — the
       # audience string here must exactly match the registry's configured
-      # RUNE_RELEASE_OIDC_AUDIENCE (default "rune-registry").
+      # JAAS_RELEASE_OIDC_AUDIENCE (default "jaas-registry").
       - name: Request OIDC token
         id: oidc
         uses: actions/github-script@v7
         with:
           script: |
-            const token = await core.getIDToken('rune-registry');
+            const token = await core.getIDToken('jaas-registry');
             core.setOutput('token', token);
 
       - name: Release
         run: |
-          uv run runectl release . \
+          uv run jaasctl release . \
             --tag "${{ github.ref_name }}" \
             --oidc-token "${{ steps.oidc.outputs.token }}" \
-            --api-url "$RUNE_API_URL" \
+            --api-url "$JAAS_API_URL" \
             --ci-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   # Only needed if this repo's link restricts releases to specific branches
@@ -116,15 +116,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const token = await core.getIDToken('rune-registry');
+            const token = await core.getIDToken('jaas-registry');
             core.setOutput('token', token);
 
       - name: Release
         run: |
-          uv run runectl release . \
+          uv run jaasctl release . \
             --tag "${{ github.ref_name }}" \
             --oidc-token "${{ steps.oidc.outputs.token }}" \
-            --api-url "$RUNE_API_URL" \
+            --api-url "$JAAS_API_URL" \
             --ci-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
 # Recommended branch protection for this repo (Settings > Branches — the

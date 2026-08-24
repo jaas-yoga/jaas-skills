@@ -1,9 +1,9 @@
-from rune_registry.index.models import Visibility
-from rune_registry.index.query import score_entry, search
-from rune_registry.index.store import InMemoryIndex
-from rune_registry.sharing.access import ANONYMOUS, CallerContext
-from rune_registry.sharing.grants import GrantStore
-from rune_registry.sharing.models import GranteeType, SharePermission
+from jaas_registry.index.models import Visibility
+from jaas_registry.index.query import score_entry, search
+from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.sharing.access import ANONYMOUS, CallerContext
+from jaas_registry.sharing.grants import GrantStore
+from jaas_registry.sharing.models import GranteeType, SharePermission
 from tests.fixtures.index_entries import make_entry
 
 

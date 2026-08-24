@@ -6,8 +6,8 @@ draft routes. No real network call is ever made.
 
 from __future__ import annotations
 
-from rune_registry.authn.github_client import GitHubPullRequest, GitHubRelease
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.authn.github_client import GitHubPullRequest, GitHubRelease
+from jaas_registry.common.errors import ErrorCode, JaasError
 
 
 class FakeGitHubApiClient:
@@ -24,7 +24,7 @@ class FakeGitHubApiClient:
         # Test knobs
         self.mergeable: bool | None = True
         self.mergeable_after_polls: int = 0  # None until this many get_pull_request calls
-        self.fail_commit_with: RuneError | None = None
+        self.fail_commit_with: JaasError | None = None
         # ref -> {path: content} — separate from `branches`/`file_contents`
         # above (those model the OAuth-authenticated write path); this
         # models the unauthenticated public-read surface used by the
@@ -64,7 +64,7 @@ class FakeGitHubApiClient:
         self, access_token: str, *, owner: str, repo: str, branch: str, from_sha: str
     ) -> None:
         if branch in self.branches:
-            raise RuneError(
+            raise JaasError(
                 ErrorCode.DRAFT_GIT_BRANCH_EXISTS, f"branch '{branch}' already exists"
             )
         source = next((b for b, sha in self.branches.items() if sha == from_sha), None)
@@ -134,7 +134,7 @@ class FakeGitHubApiClient:
         self, access_token: str, *, owner: str, repo: str, number: int
     ) -> str:
         if self.mergeable is False:
-            raise RuneError(
+            raise JaasError(
                 ErrorCode.DRAFT_GIT_MERGE_CONFLICT,
                 f"pull request #{number} could not be merged automatically",
                 details={"prNumber": number},
@@ -193,11 +193,11 @@ class FakeGitHubApiClient:
     def get_public_tree(self, *, owner: str, repo: str, ref: str) -> list[str]:
         files = self.public_source.get(ref)
         if files is None:
-            raise RuneError(ErrorCode.GITHUB_API_ERROR, f"ref '{ref}' not found or not public")
+            raise JaasError(ErrorCode.GITHUB_API_ERROR, f"ref '{ref}' not found or not public")
         return sorted(files)
 
     def get_public_file_content(self, *, owner: str, repo: str, ref: str, path: str) -> bytes:
         files = self.public_source.get(ref)
         if files is None or path not in files:
-            raise RuneError(ErrorCode.GITHUB_API_ERROR, f"'{path}' not found at ref '{ref}'")
+            raise JaasError(ErrorCode.GITHUB_API_ERROR, f"'{path}' not found at ref '{ref}'")
         return files[path]

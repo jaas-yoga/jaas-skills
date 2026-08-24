@@ -1,9 +1,9 @@
 import pytest
 
-from rune_registry.authn.pat import PatStore
-from rune_registry.authz.policy import JwtAuthorizer, build_authorizer_from_settings
-from rune_registry.common.config import Settings
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.authn.pat import PatStore
+from jaas_registry.authz.policy import JwtAuthorizer, build_authorizer_from_settings
+from jaas_registry.common.config import Settings
+from jaas_registry.common.errors import ErrorCode, JaasError
 from tests.fixtures.jwt_tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_SECRET, make_token
 
 
@@ -15,14 +15,14 @@ def make_authorizer(**overrides) -> JwtAuthorizer:
 
 def test_missing_token_denied_by_default():
     authorizer = make_authorizer()
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=None, tenant_header=None, required_permissions=("fs:read",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
 
 def test_invalid_token_denied():
     authorizer = make_authorizer()
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token="garbage", tenant_header=None, required_permissions=())
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -36,7 +36,7 @@ def test_exact_scope_permitted():
 def test_missing_required_scope_denied():
     authorizer = make_authorizer()
     token = make_token(scopes=("fs:read",))
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=token, tenant_header=None, required_permissions=("network:egress",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -56,7 +56,7 @@ def test_no_required_permissions_permitted_with_any_valid_token():
 def test_partial_scope_match_denied():
     authorizer = make_authorizer()
     token = make_token(scopes=("fs:read",))
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(
             token=token, tenant_header=None, required_permissions=("fs:read", "fs:write")
         )
@@ -78,7 +78,7 @@ def test_tenant_boundary_enabled_matching_tenant_permitted():
 def test_tenant_boundary_enabled_mismatched_tenant_denied():
     authorizer = make_authorizer(enforce_tenant_boundary=True)
     token = make_token(scopes=("fs:read",), tenant="acme")
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(
             token=token, tenant_header="other-tenant", required_permissions=("fs:read",)
         )
@@ -88,7 +88,7 @@ def test_tenant_boundary_enabled_mismatched_tenant_denied():
 def test_tenant_boundary_enabled_no_tenant_claim_denied():
     authorizer = make_authorizer(enforce_tenant_boundary=True)
     token = make_token(scopes=("fs:read",))  # no tenant claim
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         authorizer.check(token=token, tenant_header="acme", required_permissions=("fs:read",))
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -121,7 +121,7 @@ class TestPersonalAccessTokenRevocation:
         authorizer = make_authorizer(pat_store=pat_store)
         token = make_token(scopes=("fs:read",), pat_id=pat.id)
 
-        with pytest.raises(RuneError) as exc_info:
+        with pytest.raises(JaasError) as exc_info:
             authorizer.check(token=token, tenant_header=None, required_permissions=("fs:read",))
         assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -129,7 +129,7 @@ class TestPersonalAccessTokenRevocation:
         authorizer = make_authorizer(pat_store=PatStore(tmp_path))
         token = make_token(scopes=("fs:read",), pat_id="pat_never_existed")
 
-        with pytest.raises(RuneError):
+        with pytest.raises(JaasError):
             authorizer.check(token=token, tenant_header=None, required_permissions=("fs:read",))
 
     def test_regular_session_token_is_unaffected_by_an_unconfigured_pat_store(self):

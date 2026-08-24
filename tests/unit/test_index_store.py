@@ -1,4 +1,4 @@
-from rune_registry.index.store import InMemoryIndex
+from jaas_registry.index.store import InMemoryIndex
 from tests.fixtures.index_entries import make_entry
 
 

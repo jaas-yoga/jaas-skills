@@ -1,5 +1,5 @@
 # App name:
-Rune skills - rune run / runectl validate	Ancient symbols that perform actions (like prompts/skills).
+Jaas skills - jaas run / jaasctl validate	Ancient symbols that perform actions (like prompts/skills).
 # Skill Registry Technical Design
 
 Version: 2.0.0  
@@ -192,12 +192,12 @@ dependency-cycle checks (§4.4.3, §8.1).
 
 **A genuinely separate service, not a vendored library.** The rule
 catalog *and* the engine that executes it live entirely in a standalone
-codebase — [rune-guardrails-catalog](https://github.com/balakrishna-maduru/rune-guardrails-catalog)
+codebase — [jaas-guardrails-catalog](https://github.com/balakrishna-maduru/jaas-guardrails-catalog)
 — with its own repo, `pyproject.toml`, test suite, and deploy. This
 service is reached exclusively over its own REST API
 (`GET /catalog`, `POST /scan`, `GET /healthz`); this codebase contains
 **no scanning logic and no copy of the rule catalog**. The only contact
-point is `src/rune_registry/guardrails/client.py`'s `GuardrailsClient` —
+point is `src/jaas_registry/guardrails/client.py`'s `GuardrailsClient` —
 an HTTP client, not an import of the other repo's Python. Running both
 locally means running two processes (`run.sh` manages this — see
 ROLLOUT.md), same as this app and its web UI already are two processes.
@@ -244,14 +244,14 @@ something the content-scanning service should need to know about.
 
 **Where this hooks in**: `artifact/publish.py`'s `publish_skill` calls
 `GuardrailsClient.scan(...)` right after `validate_skill_package`
-succeeds; a BLOCK finding raises `RuneError(GUARDRAIL_VIOLATION)` before
+succeeds; a BLOCK finding raises `JaasError(GUARDRAIL_VIOLATION)` before
 any archive/store write, mirroring the existing tamper/duplicate-publish
 rejection path. WARN findings never block a publish; they are recorded on
 the publish audit event (§7.3) and surfaced to the caller (CLI stdout, or
 the `warnings` field on the `/drafts/{id}/validate` response consumed by
 the web UI — see ui-design.md §10.7). `guardrails_client` is an opt-in
 parameter (`| None = None`, same shape as `existing_dependency_graph`
-above it) — real callers (`runectl`, the web API) always pass a real
+above it) — real callers (`jaasctl`, the web API) always pass a real
 client, so production publishes are always scanned; a caller that only
 cares about unrelated behavior (signing, storage, index sync) can omit it
 without needing a live guardrails service.
@@ -490,7 +490,7 @@ not expected to embed raw tokens in the first place.
 Implementation note: each app/CLI invocation builds its own `TracerProvider`
 rather than installing one process-wide global — OTel only allows setting the
 global provider once per process, which would make automated tests fight over
-a shared exporter. `runectl serve` and `runectl publish` each open one
+a shared exporter. `jaasctl serve` and `jaasctl publish` each open one
 top-level span per operation so their nested storage-call spans share a trace
 instead of each becoming an unrelated root. Validation and policy rejections
 (schema/dependency/cycle checks, JWT/scope denials, signature/trust failures)

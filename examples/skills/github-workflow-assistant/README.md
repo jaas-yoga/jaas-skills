@@ -17,7 +17,7 @@ that's what this skill actually targets.
 - `schema.json` — `task`/`repo` in, `summary`/`actionsTaken`/`url` out.
 - `permissions.yaml` — `network:egress` (calls the GitHub API via `gh`),
   `fs:read` (reads local git state).
-- `dependencies.yaml` — depends on `rune.devtools.git-fundamentals
+- `dependencies.yaml` — depends on `jaas.devtools.git-fundamentals
   >=1.0.0,<2.0.0` (the companion example skill), resolved and
   cycle-checked at publish time (design.md §4.4). Publish
   `git-fundamentals` first, or this publish fails with `MISSING_DEPENDENCY`.
@@ -26,12 +26,12 @@ that's what this skill actually targets.
 ## Publishing (or re-publishing after an edit)
 
 ```bash
-uv run runectl validate examples/skills/github-workflow-assistant
-uv run runectl publish examples/skills/github-workflow-assistant
+uv run jaasctl validate examples/skills/github-workflow-assistant
+uv run jaasctl publish examples/skills/github-workflow-assistant
 ./run.sh restart   # the running API only re-scans storage at startup
 ```
 
-`runectl publish` has no session/tenant concept, so it always publishes as
+`jaasctl publish` has no session/tenant concept, so it always publishes as
 `visibility: public`, `ownerTenant: local` — exactly what "visible to every
 tenant" requires. To publish a new version, bump `version` in
 `manifest.yaml` first (duplicate id+version publishes are rejected with

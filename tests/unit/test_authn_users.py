@@ -1,4 +1,4 @@
-from rune_registry.authn.users import UserStore, derive_user_id
+from jaas_registry.authn.users import UserStore, derive_user_id
 
 
 def test_find_or_create_creates_new_user(tmp_path):

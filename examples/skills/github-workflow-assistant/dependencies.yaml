@@ -1,3 +1,3 @@
-- id: rune.devtools.git-fundamentals
+- id: jaas.devtools.git-fundamentals
   versionConstraint: ">=1.0.0,<2.0.0"
 

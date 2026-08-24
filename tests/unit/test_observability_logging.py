@@ -1,7 +1,7 @@
 import json
 import logging
 
-from rune_registry.observability.logging import (
+from jaas_registry.observability.logging import (
     JsonFormatter,
     configure_logging,
     get_correlation_id,
@@ -34,7 +34,7 @@ def test_json_formatter_produces_valid_json_with_expected_fields():
     token = set_correlation_id("corr-1")
     try:
         record = logging.LogRecord(
-            name="rune_registry.test",
+            name="jaas_registry.test",
             level=logging.INFO,
             pathname=__file__,
             lineno=1,
@@ -55,7 +55,7 @@ def test_json_formatter_produces_valid_json_with_expected_fields():
 def test_json_formatter_redacts_token_shaped_messages():
     fake_jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.c2lnbmF0dXJl"
     record = logging.LogRecord(
-        name="rune_registry.test",
+        name="jaas_registry.test",
         level=logging.WARNING,
         pathname=__file__,
         lineno=1,
@@ -83,7 +83,7 @@ def test_configure_logging_installs_json_formatter_on_root_logger():
 
 def test_json_formatter_includes_extra_fields():
     record = logging.LogRecord(
-        name="rune_registry.test",
+        name="jaas_registry.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,

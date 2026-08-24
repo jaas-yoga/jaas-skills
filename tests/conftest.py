@@ -1,6 +1,6 @@
 import pytest
 
-from rune_registry.observability.metrics import reset_metrics
+from jaas_registry.observability.metrics import reset_metrics
 
 
 @pytest.fixture

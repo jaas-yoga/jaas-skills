@@ -1,6 +1,6 @@
 # Coding Standards and API Conventions
 
-Phase 0 deliverable per implementation-plan.md. Applies to all modules under `src/rune_registry`.
+Phase 0 deliverable per implementation-plan.md. Applies to all modules under `src/jaas_registry`.
 
 ## Module boundaries
 
@@ -14,11 +14,11 @@ Phase 0 deliverable per implementation-plan.md. Applies to all modules under `sr
 - `authz` — JWT validation, policy/scope matching. Depends on `common`.
 - `api` — FastAPI routes only; no business logic — delegates to the modules above.
 
-Rule: a module never imports from `api`. This keeps the core registry logic usable from `runectl` (CLI) without booting the web server.
+Rule: a module never imports from `api`. This keeps the core registry logic usable from `jaasctl` (CLI) without booting the web server.
 
 ## Error model
 
-All rejected operations raise a `RuneError` (see `common/errors.py`) with a stable, documented `code`. Codes are never reused for a different meaning once shipped. HTTP mapping lives only in `api/errors.py`.
+All rejected operations raise a `JaasError` (see `common/errors.py`) with a stable, documented `code`. Codes are never reused for a different meaning once shipped. HTTP mapping lives only in `api/errors.py`.
 
 ## Testing bar (Definition of Done)
 

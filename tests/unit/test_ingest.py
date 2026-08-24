@@ -3,14 +3,14 @@ import json
 
 import pytest
 
-from rune_registry.guardrails.certification import CertificationStatus, GuardrailCertification
-from rune_registry.index.ingest import (
+from jaas_registry.guardrails.certification import CertificationStatus, GuardrailCertification
+from jaas_registry.index.ingest import (
     index_entry_from_manifest,
     parse_published_record,
     serialize_published_record,
 )
-from rune_registry.validation.models import DependenciesDocument, PermissionsDocument
-from rune_registry.validation.rules import validate_manifest
+from jaas_registry.validation.models import DependenciesDocument, PermissionsDocument
+from jaas_registry.validation.rules import validate_manifest
 from tests.fixtures.manifests import VALID_DEPENDENCIES, VALID_MANIFEST, VALID_PERMISSIONS
 
 

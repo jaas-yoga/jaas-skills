@@ -143,9 +143,9 @@ Browser              Next.js (Auth.js)          Google              Registry API
   |                |                                                 |   personal Tenant on first
   |                |                                                 |   sign-up (§5.2)
   |                |<-----------------------------------------------|
-  |                |               { rune_access_token (JWT),        |
-  |                |                 rune_refresh_token, user, tenants }
-  |                | Auth.js stores rune_access_token in the         |
+  |                |               { jaas_access_token (JWT),        |
+  |                |                 jaas_refresh_token, user, tenants }
+  |                | Auth.js stores jaas_access_token in the         |
   |                | server-side session (httpOnly cookie, encrypted)|
   |<---------------|                                                 |
   | redirected to /skills, session cookie set                        |
@@ -167,8 +167,8 @@ client-side JS (XSS blast-radius reduction).
   "tenant": "tnt_01hf...",         // the *active* tenant for this session
   "tenant_role": "member|admin",   // §5.2
   "scope": "skills:read skills:write skills:share",
-  "iss": "rune-registry-auth",
-  "aud": "rune-registry",
+  "iss": "jaas-registry-auth",
+  "aud": "jaas-registry",
   "exp": 1234567890
 }
 ```
@@ -177,12 +177,12 @@ client-side JS (XSS blast-radius reduction).
 unchanged — the header-vs-claim tenant check in `policy.py` doesn't need to
 change, only how the claim gets populated does.
 
-### 4.4 Personal access tokens (for `runectl` CLI use)
+### 4.4 Personal access tokens (for `jaasctl` CLI use)
 
-The CLI (`runectl publish`, `runectl serve`) has no browser to run an OAuth
+The CLI (`jaasctl publish`, `jaasctl serve`) has no browser to run an OAuth
 flow in. `/account/tokens` lets a signed-in user mint a long-lived (but
 revocable, listed, individually named) token scoped like a normal JWT, for
-`export RUNE_TOKEN=...` use with the CLI. This is the same JWT shape as
+`export JAAS_TOKEN=...` use with the CLI. This is the same JWT shape as
 §4.3 with a longer `exp`, not a different mechanism — no new validation
 path needed in `authz/`.
 
@@ -647,7 +647,7 @@ this screen doesn't invent new interaction language.
 
 - "Validate" button (and automatically, right before "Publish" is
   enabled) calls `POST /api/v1/drafts/{id}/validate`, which runs the exact
-  same `validate_skill_package` used by `runectl validate` — one validation
+  same `validate_skill_package` used by `jaasctl validate` — one validation
   implementation, exercised from the CLI, the API, and the UI.
 - Errors render in `ValidationResultsPanel` with the stable `ErrorCode`
   (e.g. `INVALID_VERSION_FORMAT`, `CIRCULAR_DEPENDENCY`) and, where the
@@ -685,7 +685,7 @@ rather than silently discarding either person's intent without saying so.
 ## 12. State Management & Data Fetching
 
 As built: server state (skills, drafts, shares, tenants) is read directly in
-Server Components (`src/lib/*-api.ts`, all `runeFetch` wrappers) and mutated
+Server Components (`src/lib/*-api.ts`, all `jaasFetch` wrappers) and mutated
 through Server Actions (`src/lib/actions.ts`), with `router.refresh()` for
 cache invalidation after a mutation — not the TanStack-Query-centric
 architecture originally planned below. This turned out to be the more

@@ -7,11 +7,11 @@ trusted public keys — never by asking the signer to vouch for itself.
 
 import pytest
 
-from rune_registry.artifact.packaging import compute_digest as _digest_of
-from rune_registry.artifact.signing import generate_dev_keypair, sign_digest
-from rune_registry.artifact.trust import TrustPolicy
-from rune_registry.artifact.verify import verify_artifact
-from rune_registry.common.errors import ErrorCode, RuneError
+from jaas_registry.artifact.packaging import compute_digest as _digest_of
+from jaas_registry.artifact.signing import generate_dev_keypair, sign_digest
+from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.artifact.verify import verify_artifact
+from jaas_registry.common.errors import ErrorCode, JaasError
 
 ARCHIVE = b"pretend-this-is-a-tar-archive"
 
@@ -26,7 +26,7 @@ def test_attacker_self_signed_key_is_never_trusted():
     attacker_signature = sign_digest(digest, attacker_keypair)
 
     trust_policy = TrustPolicy(trusted_public_keys_pem=[legit_keypair.public_key_pem()])
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=ARCHIVE,
             digest=digest,
@@ -62,7 +62,7 @@ def test_key_revocation_old_signature_stops_verifying_once_key_removed():
     old_signature = sign_digest(digest, old_keypair)
 
     post_rotation_policy = TrustPolicy(trusted_public_keys_pem=[new_keypair.public_key_pem()])
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=ARCHIVE,
             digest=digest,
@@ -83,7 +83,7 @@ def test_signature_from_one_artifact_replayed_against_another_is_rejected():
     digest_a = _digest_of(artifact_a)
     signature_a = sign_digest(digest_a, keypair)
 
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=artifact_b,
             digest=digest_a,
@@ -101,7 +101,7 @@ def test_empty_trust_policy_rejects_even_a_correctly_signed_artifact():
     signature = sign_digest(digest, keypair)
 
     empty_policy = TrustPolicy(trusted_public_keys_pem=[])
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=ARCHIVE, digest=digest, signature=signature, trust_policy=empty_policy
         )
@@ -117,7 +117,7 @@ def test_malformed_signature_values_are_rejected_not_crashed(malformed_signature
     trust_policy = TrustPolicy(trusted_public_keys_pem=[keypair.public_key_pem()])
     digest = _digest_of(ARCHIVE)
 
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=ARCHIVE,
             digest=digest,
@@ -137,7 +137,7 @@ def test_corrupted_bit_flip_in_archive_is_detected():
 
     corrupted = bytearray(ARCHIVE)
     corrupted[0] ^= 0b00000001
-    with pytest.raises(RuneError) as exc_info:
+    with pytest.raises(JaasError) as exc_info:
         verify_artifact(
             archive_bytes=bytes(corrupted),
             digest=digest,

@@ -1,7 +1,7 @@
 import pytest
 
-from rune_registry.common.errors import RuneError
-from rune_registry.guardrails.policy import GuardrailPolicyStore, default_policy
+from jaas_registry.common.errors import JaasError
+from jaas_registry.guardrails.policy import GuardrailPolicyStore, default_policy
 from tests.fixtures.fake_guardrails_client import FAKE_CATALOG
 
 CATALOG = FAKE_CATALOG
@@ -41,7 +41,7 @@ def test_store_put_silently_drops_mandatory_ids(tmp_path):
 
 def test_store_put_rejects_unknown_id(tmp_path):
     store = GuardrailPolicyStore(tmp_path)
-    with pytest.raises(RuneError, match="unknown guardrail check id"):
+    with pytest.raises(JaasError, match="unknown guardrail check id"):
         store.put(
             tenant_id="tnt_1", enabled_check_ids=frozenset({"not-a-real-check"}), catalog=CATALOG
         )

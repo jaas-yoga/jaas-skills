@@ -93,7 +93,7 @@ describes the originally-planned architecture, not the as-built one.
 
 ### Deliverables
 
-1. New `src/rune_registry/authn/` module: `google.py`, `users.py`,
+1. New `src/jaas_registry/authn/` module: `google.py`, `users.py`,
    `tenants.py`, `tokens.py` (ui-design.md §6.3).
 2. `POST /api/v1/auth/google`, `POST /api/v1/auth/refresh` endpoints.
 3. User/Tenant persistence (local-prototype: JSON-file store under
@@ -216,7 +216,7 @@ most examples show — see `src/types/next-auth.d.ts`.
 Local-prototype note: `IndexEntry.visibility` actually defaults to `PUBLIC`
 at the dataclass level, not `PRIVATE` as task 1 above specifies — a
 deliberate deviation to keep every pre-existing call site (tests, fixtures,
-`runectl publish`) fully backward compatible with the registry's behavior
+`jaasctl publish`) fully backward compatible with the registry's behavior
 from before the visibility model existed. The *API* publish path still
 requires an explicit visibility choice with no silent default (ui-design.md
 §5.1's actual rule), which is what task 1's intent was really protecting.
@@ -388,12 +388,12 @@ which arrived later and only for invites, not for typeahead search).
 
 1. Creating a skill from scratch through `/skills/new` and publishing
    succeeds end-to-end, indistinguishable in the resulting data from a
-   `runectl publish` of an equivalent package.
+   `jaasctl publish` of an equivalent package.
 2. Editing a published skill always goes through fork→draft→publish; no
    UI or API path exists to mutate a published version's files.
 3. Killing the browser tab mid-edit and reopening the draft restores all
    autosaved content (no data loss beyond the 1.5s debounce window).
-4. Validation errors surfaced in the UI match `runectl validate`'s output
+4. Validation errors surfaced in the UI match `jaasctl validate`'s output
    for the same package byte-for-byte in error code (message wording may
    differ for UI framing).
 
@@ -578,7 +578,7 @@ evidence of the visibility filter's cost.
 
 ### Deliverables
 
-1. Staged rollout behind a feature flag (`RUNE_FEATURE_WEB_UI`, following
+1. Staged rollout behind a feature flag (`JAAS_FEATURE_WEB_UI`, following
    the existing `FeatureFlags` pattern in `common/config.py`).
 2. Updated ROLLOUT.md covering the UI + new auth service.
 
@@ -586,7 +586,7 @@ evidence of the visibility filter's cost.
 
 1. Deploy behind the flag to a small internal user group first.
 2. Monitor the new auth/sharing endpoints' metrics (extends the existing
-   Prometheus setup — `rune_authz_denied_total`, latency histograms —
+   Prometheus setup — `jaas_authz_denied_total`, latency histograms —
    with the new routes automatically picked up, no new metric plumbing
    needed per design.md §10.1's existing per-endpoint labeling).
 3. Gradually widen access; document rollback (disable the flag — the
@@ -597,24 +597,24 @@ evidence of the visibility filter's cost.
 ### Exit Criteria
 
 1. No high-severity incidents during staged rollout.
-2. Rollback (flag off) verified to leave the existing `runectl`/API
+2. Rollback (flag off) verified to leave the existing `jaasctl`/API
    surface fully functional, per implementation-plan.md's existing
    rollback-safety principle.
 
-Local-prototype note: `RUNE_FEATURE_WEB_UI` was **not built**, and after
+Local-prototype note: `JAAS_FEATURE_WEB_UI` was **not built**, and after
 implementing everything else this phase describes, it's the wrong shape for
 what actually exists — `common/config.py`'s `FeatureFlags` pattern gates
 behavior inside a single FastAPI process, but the web UI is a separate
-Next.js deployment unit, in its own independent repo (`rune_ui`) calling
+Next.js deployment unit, in its own independent repo (`jaas_ui`) calling
 the existing API over HTTP; there is no code path inside `create_app()`
 for a flag to gate. The equivalent control in this architecture is simply
-whether `rune_ui` is deployed and routable at all — a deploy/no-deploy
+whether `jaas_ui` is deployed and routable at all — a deploy/no-deploy
 decision, not a runtime toggle — which is what a canary/staged rollout of
-the `rune_ui` build achieves on its own without new flag plumbing. The
+the `jaas_ui` build achieves on its own without new flag plumbing. The
 backend additions this UI depends on (auth, sharing, drafts, tenants,
 PATs) are additive new routes with no flag either, consistent with
 implementation-plan.md's existing rollback-safety principle:
-disabling/not-deploying `rune_ui` leaves every existing `runectl`/API
+disabling/not-deploying `jaas_ui` leaves every existing `jaasctl`/API
 surface, including these new endpoints, fully intact and independently
 useful (e.g. to a future non-web client) rather than orphaned behind a
 flag no one reaches. ROLLOUT.md has been updated (see below) to cover the
