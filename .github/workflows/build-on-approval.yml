@@ -1,0 +1,26 @@
+name: Build on PR approval
+
+# Separate from ci.yml's push/PR-triggered lint+test+audit: this fires only
+# once a PR review is submitted, verifying the package still builds
+# (sdist + wheel via hatchling) without re-running the full lint/test/audit
+# suite that already runs on every push.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_review does not check out the PR head by default (it
+      # resolves to the base branch) — pin explicitly to the reviewed commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - run: uv build
