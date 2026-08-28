@@ -1,0 +1,10 @@
+.venv
+.local_registry
+.git
+tests
+docs
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.run
