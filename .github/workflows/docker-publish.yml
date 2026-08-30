@@ -32,3 +32,21 @@ jobs:
           tags: |
             jaasyoga/jaas-registry:latest
             jaasyoga/jaas-registry:${{ steps.sha.outputs.short }}
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      # Pulls whatever's newest for all three services (not just this
+      # repo's), matching deploy/README.md's "docker compose pull && up -d"
+      # — harmless for the two that didn't change, since compose only
+      # recreates containers whose image actually differs.
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ vars.DEPLOY_PATH }}
+            docker compose pull
+            docker compose up -d
