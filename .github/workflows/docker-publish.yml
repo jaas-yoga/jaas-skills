@@ -46,7 +46,11 @@ jobs:
           host: ${{ vars.DEPLOY_HOST }}
           username: ${{ vars.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # flock serializes this against the other two repos' identical
+          # deploy jobs — all three can trigger around the same time
+          # (independent merges within seconds of each other), and without
+          # this, concurrent `docker compose up -d` runs on the same
+          # project raced and corrupted container state in practice.
           script: |
             cd ${{ vars.DEPLOY_PATH }}
-            docker compose pull
-            docker compose up -d
+            flock ~/.deploy.lock -c "docker compose pull && docker compose up -d"
