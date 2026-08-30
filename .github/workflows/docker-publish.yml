@@ -51,6 +51,22 @@ jobs:
           # (independent merges within seconds of each other), and without
           # this, concurrent `docker compose up -d` runs on the same
           # project raced and corrupted container state in practice.
+          #
+          # .env is regenerated from repo secrets/variables on every deploy
+          # — GitHub is the source of truth, not a hand-edited file on the
+          # VM. The heredoc delimiter is quoted ('ENVEOF') so the remote
+          # shell never re-interprets $ / backticks inside a secret value;
+          # GitHub's own ${{ }} substitution already happened by the time
+          # this script text reaches the runner.
           script: |
+            cat > ${{ vars.DEPLOY_PATH }}/.env <<'ENVEOF'
+            DOMAIN=${{ vars.DOMAIN }}
+            API_DOMAIN=${{ vars.API_DOMAIN }}
+            AUTH_SECRET=${{ secrets.AUTH_SECRET }}
+            AUTH_GOOGLE_ID=${{ vars.AUTH_GOOGLE_ID }}
+            AUTH_GOOGLE_SECRET=${{ secrets.AUTH_GOOGLE_SECRET }}
+            JAAS_JWT_SECRET=${{ secrets.JAAS_JWT_SECRET }}
+            JAAS_DEV_LOGIN_PASSWORD=${{ secrets.JAAS_DEV_LOGIN_PASSWORD }}
+            ENVEOF
             cd ${{ vars.DEPLOY_PATH }}
             flock ~/.deploy.lock -c "docker compose pull && docker compose up -d"
