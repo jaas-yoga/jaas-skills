@@ -6,6 +6,7 @@ Design ref: implementation-plan.md Phase 0, task 2.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,8 +22,11 @@ class FeatureFlags(BaseSettings):
 class Settings(BaseSettings):
     """Process-wide configuration, sourced from environment variables (12-factor style).
 
-    Local-prototype scope: `storage_root` stands in for the S3/OCI-backed object
-    store described in design.md; see storage/local_filesystem.py.
+    storage_backend selects the ObjectStore implementation (storage/factory.py):
+    "local" (default) is the filesystem prototype in storage/local_filesystem.py;
+    "s3" switches to storage/s3_store.py, which speaks any S3-compatible API —
+    OCI Object Storage's S3 Compatibility API, MinIO, or AWS S3 itself. See
+    deploy/README.md in jaas-ui for the OCI-specific setup.
     """
 
     model_config = SettingsConfigDict(env_prefix="JAAS_", env_file=".env", extra="ignore")
@@ -31,6 +35,22 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path(".local_registry/artifacts")
     policy_dir: Path = Path(".local_registry/policy")
+
+    storage_backend: Literal["local", "s3"] = "local"
+    storage_s3_bucket: str | None = None
+    # OCI Object Storage's S3-compat endpoint is
+    # https://<namespace>.compat.objectstorage.<region>.oraclecloud.com — leave
+    # unset for real AWS S3, where boto3's own regional endpoint resolution is
+    # correct.
+    storage_s3_endpoint_url: str | None = None
+    storage_s3_region: str = "us-east-1"
+    # An OCI "Customer Secret Key" (Identity console → your user → Customer
+    # Secret Keys) doubles as an S3 access-key/secret-key pair; not the
+    # tenancy's API signing key used elsewhere.
+    storage_s3_access_key_id: str | None = None
+    storage_s3_secret_access_key: str | None = None
+    # Optional key prefix so one bucket can be shared across environments/apps.
+    storage_s3_prefix: str = ""
 
     jwt_issuer: str = "jaas-registry-dev"
     jwt_audience: str = "jaas-registry"

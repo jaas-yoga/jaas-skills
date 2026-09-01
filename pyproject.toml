@@ -25,6 +25,12 @@ dependencies = [
     # — a real runtime dependency, not just test tooling, now that it's used
     # to call out over HTTP rather than executing guardrail checks in-process.
     "httpx>=0.27",
+    # storage/s3_store.py: the production ObjectStore backend, speaking any
+    # S3-compatible API (OCI Object Storage's S3 Compatibility API, MinIO, AWS
+    # S3 itself). >=1.35 for IfNoneMatch conditional-write support on put_object
+    # (S3 conditional writes, GA'd Aug 2024), which write_tag_if_absent relies
+    # on for its immutability guarantee.
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +41,9 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "pip-audit>=2.7",
+    # Mocks S3-compatible calls in tests/unit/test_storage_s3_store.py without
+    # hitting a real bucket.
+    "moto[s3]>=5.0",
 ]
 
 [project.scripts]

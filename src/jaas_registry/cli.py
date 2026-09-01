@@ -186,11 +186,11 @@ def cmd_publish(
         resolve_guardrails_for_skill,
     )
     from jaas_registry.observability.tracing import build_tracer
-    from jaas_registry.storage.local_filesystem import LocalFilesystemStore
+    from jaas_registry.storage.factory import build_store
 
     settings = load_settings()
     tracer = build_tracer(batch=True)
-    store = LocalFilesystemStore(settings.storage_root, tracer=tracer)
+    store = build_store(settings, tracer=tracer)
     keypair = load_or_create_keypair(settings.policy_dir / "signing_key.pem")
     ensure_key_registered(settings.policy_dir, keypair.public_key_pem())
     trust_policy = load_trust_policy(settings.policy_dir)
@@ -428,13 +428,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from jaas_registry.index.demo_seed import seed_demo_skills
     from jaas_registry.observability.logging import configure_logging
     from jaas_registry.observability.tracing import build_tracer
-    from jaas_registry.storage.local_filesystem import LocalFilesystemStore
+    from jaas_registry.storage.factory import build_store
 
     configure_logging()
 
     settings = load_settings()
     tracer = build_tracer(batch=True)
-    store = LocalFilesystemStore(settings.storage_root, tracer=tracer)
+    store = build_store(settings, tracer=tracer)
     index = bootstrap_index(store)
 
     # Same signing key api/draft_routes.py's publish path and jaasctl

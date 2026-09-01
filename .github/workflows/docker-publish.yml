@@ -67,6 +67,12 @@ jobs:
             AUTH_GOOGLE_SECRET=${{ secrets.AUTH_GOOGLE_SECRET }}
             JAAS_JWT_SECRET=${{ secrets.JAAS_JWT_SECRET }}
             JAAS_DEV_LOGIN_PASSWORD=${{ secrets.JAAS_DEV_LOGIN_PASSWORD }}
+            JAAS_STORAGE_BACKEND=${{ vars.JAAS_STORAGE_BACKEND || 'local' }}
+            JAAS_STORAGE_S3_BUCKET=${{ vars.JAAS_STORAGE_S3_BUCKET }}
+            JAAS_STORAGE_S3_ENDPOINT_URL=${{ vars.JAAS_STORAGE_S3_ENDPOINT_URL }}
+            JAAS_STORAGE_S3_REGION=${{ vars.JAAS_STORAGE_S3_REGION || 'us-ashburn-1' }}
+            JAAS_STORAGE_S3_ACCESS_KEY_ID=${{ secrets.JAAS_STORAGE_S3_ACCESS_KEY_ID }}
+            JAAS_STORAGE_S3_SECRET_ACCESS_KEY=${{ secrets.JAAS_STORAGE_S3_SECRET_ACCESS_KEY }}
             ENVEOF
             cd ${{ vars.DEPLOY_PATH }}
             flock ~/.deploy.lock -c "docker compose pull && docker compose up -d"
