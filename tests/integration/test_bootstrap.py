@@ -5,8 +5,10 @@ import pytest
 from jaas_registry.artifact.publish import publish_skill
 from jaas_registry.artifact.signing import generate_dev_keypair
 from jaas_registry.artifact.trust import TrustPolicy
+from jaas_registry.artifact.yank import YankRecord, write_status
 from jaas_registry.common.audit import InMemoryAuditSink
 from jaas_registry.index.bootstrap import bootstrap_index
+from jaas_registry.index.models import ArtifactStatus
 from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
@@ -76,3 +78,31 @@ def test_bootstrap_reconstructs_multiple_versions(rig, tmp_path):
 
     index = bootstrap_index(rig["store"])
     assert index.list_versions(VALID_MANIFEST["id"]) == ["1.0.0", "1.1.0"]
+
+
+def test_bootstrap_survives_a_restart_reflecting_a_yanked_version(rig, tmp_path):
+    """A yank sidecar must not be forgotten across a cold-start rebuild —
+    the whole point of a sidecar (vs. baking status into the immutable tag)
+    is that it's the only thing bootstrap has to re-read on top of the tag."""
+    _publish(rig, tmp_path / "pkg")
+    write_status(
+        rig["store"],
+        skill_id=VALID_MANIFEST["id"],
+        version=VALID_MANIFEST["version"],
+        record=YankRecord(
+            status=ArtifactStatus.YANKED, reason="CVE-2026-1234", actor="usr_owner", at="t1"
+        ),
+    )
+
+    fresh_store = LocalFilesystemStore(rig["store"].root)
+    index = bootstrap_index(fresh_store)
+
+    entry = index.get(VALID_MANIFEST["id"], VALID_MANIFEST["version"])
+    assert entry.status == ArtifactStatus.YANKED
+
+
+def test_bootstrap_defaults_to_active_when_no_status_sidecar_exists(rig, tmp_path):
+    _publish(rig, tmp_path / "pkg")
+    index = bootstrap_index(rig["store"])
+    entry = index.get(VALID_MANIFEST["id"], VALID_MANIFEST["version"])
+    assert entry.status == ArtifactStatus.ACTIVE

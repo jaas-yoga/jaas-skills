@@ -150,7 +150,33 @@ industry (npm, PyPI Trusted Publishing) is converging on.
 
 ---
 
-### 1.3 — Version deprecation / "yank" mechanism · `jaas-skills`
+### 1.3 — Version deprecation / "yank" mechanism · `jaas-skills` — ✅ DONE (2026-09-02)
+
+**Status: implemented via TDD** (tests written first, red-confirmed, then
+made green) — 694/695 repo-wide tests pass (the one failure is the
+pre-existing, host-load-sensitive perf test, unrelated to this change and
+already documented as flaky in the backend-conventions skill), `ruff`
+clean, no new `mypy` errors beyond this repo's pre-existing missing-stub
+noise. Not committed yet — reviewed for gaps first (see below), commit
+follows this update.
+
+**Design deviation from the original plan, found during implementation:**
+the plan called for extending `new_index_update_event()`/`index/events.py`
+with a `kind` discriminator to avoid the event-ID collision. Implementation
+found that **no live route actually wires an `EventBus` into
+`publish_skill()` today** — `release_routes.py`, `draft_routes.py`, and
+`cli.py` all call `index.put()` directly after a storage write; the event
+bus only exists inside the isolated `test_publish_to_index_sync.py` unit
+test (this is exactly Phase 2.4's "wire up the existing event-bus index
+sync" gap). So the yank/unyank routes follow the same direct-`index.put()`
+pattern as every other publish-adjacent route, and `index/events.py` was
+**not** touched — no route calls `new_index_update_event()` for a yank, so
+the collision can't fire yet. The collision risk is real but latent; it's
+called out as a landmine for whoever picks up Phase 2.4 (also flagged in
+the `jaas-backend-conventions` skill now). `index/bootstrap.py` and
+`index/consumer.py` were still both made sidecar-aware (see below) so a
+yank survives a cold-start restart today, and the consumer path is already
+correct for whenever 2.4 wires it in.
 
 **What we're building:** Today, once a version is published there is no
 way to flag it as insecure/broken after the fact — certification is
@@ -173,19 +199,24 @@ in the API/UI so consumers see a warning.
   change — if only one gets it, the other silently violates the protocol
   contract at runtime (Python `Protocol`s aren't enforced until called).
   This is a real thing to get right in one PR, not two.
-- **`IndexEntry` field addition:** `status: str = "active"` — has a
-  default, so every existing call site, fixture, and serialized record
-  keeps working unchanged. Low risk, same pattern this dataclass already
-  uses for prior additive fields.
-- **Event-bus signature change:** `new_index_update_event()` needs a new
-  parameter to avoid the event-ID collision bug this exploration found
-  (yank and publish would otherwise generate the identical `event_id` and
-  the yank event would be silently dropped by the consumer's dedup logic —
-  confirmed by reading `index/consumer.py` directly). The new parameter
-  must default to today's "publish" behavior so the **existing publish
-  call sites need zero changes** — this is a backward-compatible signature
-  extension, not a breaking one, as long as it's implemented with a
-  default.
+- **`IndexEntry` field addition:** `status: ArtifactStatus = ArtifactStatus.ACTIVE`
+  (an enum, matching the existing `visibility: Visibility` field's
+  convention, not a raw `str` as originally planned) — has a default, so
+  every existing call site, fixture, and serialized record keeps working
+  unchanged. Low risk, same pattern this dataclass already uses for prior
+  additive fields.
+- **`_require_share_management_access()` ownership lookup changed** from
+  `index.get_resolved(skill_id, None)` to `index.get(skill_id,
+  list_versions(skill_id)[-1])` — the original would return `None` (and
+  trip its own `assert entry is not None`) the moment *every* version of a
+  skill was yanked, since `get_resolved` now excludes yanked versions from
+  unconstrained resolution. That would have locked a skill's own owner out
+  of unyanking their last remaining version. Caught by an explicit
+  regression test (`test_yank_status_survives_even_when_every_version_of_the_skill_is_yanked`)
+  before it could ship. Functionally equivalent for ownership purposes
+  either way — `owner_user`/`owner_tenant` don't vary by version, which is
+  the same assumption the original code already made, just via a
+  different, now-broken selection path.
 - **Read-path behavior change:** `InMemoryIndex.get_resolved()` gains
   yank-aware filtering. This changes what `latest`/range resolution
   returns *if* a version is yanked (by design — that's the feature) but
@@ -201,20 +232,26 @@ maintainer flag a version as insecure after the fact." Gives operators a
 real incident-response lever without violating the platform's immutability
 principle.
 
-**Impacted areas:**
-- New: `src/jaas_registry/artifact/status.py`,
-  `tests/integration/test_yank.py`, `tests/unit/test_artifact_status.py`.
-- Modified: `storage/base.py` (Protocol), `storage/local_filesystem.py`,
-  `storage/s3_store.py` (implement `write_object` in both — this file now
-  exists, per Phase 2.3 below, landed 2026-09-02),
-  `index/models.py` (`IndexEntry.status` field), `index/bootstrap.py` and
-  `index/consumer.py` (sidecar overlay on entry construction),
-  `index/events.py` (event kind/discriminator), `index/store.py`
-  (`get_resolved` filtering), `index/query.py` (search exclusion),
-  `api/routes.py` (new `/yank`, `/unyank` routes + generalized
-  `_require_share_management_access`), `api/schemas.py`
-  (`YankRequest`/`YankResponse`, `status` field on
-  `SkillMetadataResponse`/`SearchResultItem`).
+**Impacted areas (actual):**
+- New: `src/jaas_registry/artifact/yank.py` (named `yank.py`, not the
+  originally-planned `status.py` — matches the action-oriented naming of
+  its siblings `publish.py`/`verify.py`/`trust.py`), `tests/unit/
+  test_artifact_yank.py`, `tests/integration/test_yank.py`.
+- Modified: `storage/base.py` (`write_object` added to the `Protocol`),
+  `storage/local_filesystem.py` + `storage/s3_store.py` (both implement
+  it), `storage/keys.py` (new `status_key()`), `index/models.py`
+  (`ArtifactStatus` enum + `IndexEntry.status`), `index/bootstrap.py` +
+  `index/consumer.py` (sidecar overlay via `artifact.yank.apply_status`),
+  `index/store.py` (`get_resolved` exact-pin-vs-filtered logic),
+  `api/routes.py` (new `/yank`, `/unyank` routes; generalized
+  `_require_share_management_access` to accept `required_permissions`;
+  `status` added to the `get_skill_metadata`/`search_skills` response
+  mapping), `api/schemas.py` (`YankRequest`/`YankResponse`, `status` field
+  on `SkillMetadataResponse`/`SearchResultItem`).
+- `index/ingest.py` and `index/events.py` were **not** touched — status
+  lives entirely outside the immutable manifest record (no ingest.py
+  change needed), and no route calls `new_index_update_event()` for yank
+  (see the design-deviation note above).
 - **jaas-ui is NOT touched in this item** — surfacing the yanked-status
   warning banner in the skill detail page is explicitly deferred (noted as
   a Phase 3.4-adjacent follow-up, since 3.4 is already "ship missing UI

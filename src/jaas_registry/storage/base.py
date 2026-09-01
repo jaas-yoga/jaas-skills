@@ -19,6 +19,13 @@ class ObjectStore(Protocol):
         if `key` already exists — this is the immutability enforcement point."""
         ...
 
+    def write_object(self, key: str, data: bytes) -> None:
+        """Unconditional overwrite — the one deliberately-not-immutable write
+        path in this interface, for mutable sidecar state (e.g. the yank/unyank
+        status sidecar, artifact/yank.py) that must stay updatable, unlike
+        write_tag_if_absent's tag."""
+        ...
+
     def read(self, key: str) -> bytes: ...
 
     def exists(self, key: str) -> bool: ...

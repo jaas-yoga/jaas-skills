@@ -7,7 +7,7 @@ This class is the single, full index each stateless replica holds.
 
 from __future__ import annotations
 
-from jaas_registry.index.models import IndexEntry
+from jaas_registry.index.models import ArtifactStatus, IndexEntry
 from jaas_registry.index.semver_resolver import resolve_version
 
 
@@ -24,8 +24,20 @@ class InMemoryIndex:
         return self._entries.get(skill_id, {}).get(version)
 
     def get_resolved(self, skill_id: str, constraint: str | None) -> IndexEntry | None:
-        versions = list(self._entries.get(skill_id, {}))
-        resolved = resolve_version(versions, constraint)
+        """A yanked version is excluded from `latest`/`stable`/range
+        resolution, but an exact-pin constraint (the literal version string)
+        still resolves it directly — PyPI/npm-style yank semantics. Checked
+        before filtering: `constraint` naturally can't collide with the
+        reserved "latest"/"stable" aliases, since those are never valid
+        version strings themselves."""
+        versions_by_id = self._entries.get(skill_id, {})
+        if constraint is not None and constraint in versions_by_id:
+            return versions_by_id[constraint]
+
+        resolvable_versions = [
+            v for v, entry in versions_by_id.items() if entry.status != ArtifactStatus.YANKED
+        ]
+        resolved = resolve_version(resolvable_versions, constraint)
         if resolved is None:
             return None
         return self.get(skill_id, resolved)

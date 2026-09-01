@@ -7,7 +7,13 @@ description: Conventions, known gotchas, and repo/git state for the jaas-registr
 
 Stateless, GitOps-driven skill registry. No database anywhere — every store
 is JSON files under `settings.policy_dir` or content-addressed blobs under
-`settings.storage_root`. Read `design.md` and `implementation-plan.md` for
+`settings.storage_root`. The blob/tag store itself is backend-swappable
+(`storage/factory.py::build_store()`, `Settings.storage_backend`): `"local"`
+(default, `storage/local_filesystem.py`) or `"s3"`
+(`storage/s3_store.py`, any S3-compatible endpoint — OCI Object Storage,
+MinIO, AWS S3). `policy_dir` (JSON entity stores, signing keys) is always
+local disk regardless of `storage_backend` — that setting only affects
+published-artifact storage. Read `design.md` and `implementation-plan.md` for
 the original 8-phase design; `ui-design.md`/`ui-implementation-plan.md` for
 the web UI phases (auth, visibility/sharing, drafts) layered on top later
 — those UI docs stay here even though the UI itself now lives in the
@@ -78,6 +84,62 @@ shape — don't invent a new one:
   `jaasctl publish`) must call `load_trust_policy(settings.policy_dir)`
   fresh, exactly like `cli.py`'s `cmd_publish` does — never rely on the
   injected `TrustPolicyDep` for that.
+
+## Version status / yank (`artifact/yank.py`, `index/models.py`)
+
+- `IndexEntry.status` (`ArtifactStatus`: `ACTIVE`/`YANKED`) is **not** part
+  of the immutable published record — it's never read or written by
+  `index/ingest.py`'s `parse_published_record`/`serialize_published_record`.
+  It lives in a separate, deliberately-mutable sidecar file
+  (`storage/keys.py::status_key()`, alongside the tag's `manifest.json`),
+  written via the new `ObjectStore.write_object()` — the one write path in
+  that interface that's an unconditional overwrite, unlike
+  `write_tag_if_absent`'s immutability guarantee. Don't be tempted to fold
+  status into the manifest record "for simplicity" — that would mean
+  rewriting an immutable file, which is exactly what this sidecar exists to
+  avoid.
+- **Two places build an `IndexEntry` from storage and must both overlay the
+  sidecar**: `index/bootstrap.py` (cold start) and `index/consumer.py`
+  (event-driven incremental apply). Both call
+  `artifact.yank.apply_status(entry, read_status(store, skill_id=..., version=...))`
+  right after `parse_published_record()`. If you ever add a third place
+  that builds an `IndexEntry` from a tag key, it needs this too — check
+  `git grep parse_published_record` before assuming you've found them all.
+- **`InMemoryIndex.get_resolved()` excludes yanked versions from
+  unconstrained/range/alias resolution, but an exact version-string pin
+  still resolves a yanked version directly** (PyPI/npm-style yank
+  semantics) — implemented by checking `constraint in
+  self._entries[skill_id]` (a dict-key hit) *before* filtering, since that
+  can only be true for a literal version string, never `"latest"`/
+  `"stable"`/a range expression.
+- **Known landmine for whoever picks up Phase 2.4** ("wire up the existing
+  event-bus index sync"): `index/events.py::new_index_update_event()`
+  derives `event_id` as `f"{skill_id}@{version}"`, and
+  `IndexEventConsumer.apply()` dedupes purely on `event_id`
+  (`index/consumer.py`). A yank event for the same `(skill_id, version)` a
+  publish event already used would be **silently dropped as a duplicate**
+  if emitted with the same `event_id` shape. This doesn't bite today only
+  because **no live route actually wires an `EventBus` into
+  `publish_skill()`** — `release_routes.py`/`draft_routes.py`/`cli.py` all
+  call `index.put()` directly, so the event bus is exercised only inside
+  `test_publish_to_index_sync.py`'s isolated unit test. The moment 2.4
+  wires a real bus in, any code that also emits a yank event through it
+  needs a distinct `event_id` (e.g. a discriminator suffix) — this was
+  deliberately *not* fixed pre-emptively in `index/events.py` since nothing
+  calls it that way yet (see IMPLEMENTATION_PLAN.md Phase 1.3's design-
+  deviation note).
+- `InMemoryIndex.list_versions()` returns `sorted(self._entries[skill_id])`
+  — a **plain lexicographic string sort, not semver-aware**
+  (`"10.0.0" < "2.0.0"`). Fine for `_require_share_management_access()`'s
+  "grab any version, ownership doesn't vary by version" use, but don't
+  reach for `list_versions()[-1]` expecting "the highest semver version" —
+  that's what `get_resolved()`/`resolve_version()` are for.
+- `_require_share_management_access()` (`api/routes.py`) takes a
+  `required_permissions: tuple[str, ...] = ("skills:share",)` param now,
+  not a hardcoded scope — `/yank` and `/unyank` reuse it with
+  `("skills:write",)` instead of inventing a parallel ownership check.
+  Reach for this same generalization before writing a new "owner or tenant
+  admin" guard anywhere else in this file.
 
 ## Visibility & sharing (`sharing/access.py`, `index/models.py`)
 
@@ -232,7 +294,11 @@ shape — don't invent a new one:
 ## Tests
 
 - `tmp_path` is the standard way to get an isolated store directory for any
-  file-backed store test — don't mock the filesystem.
+  file-backed store test — don't mock the filesystem. For `storage/s3_store.py`,
+  the equivalent is `moto`'s `mock_aws()` + a real `boto3.client("s3",
+  region_name=...)` against it (`tests/unit/test_storage_s3_store.py`'s
+  `s3_client` fixture) — a real client talking to moto's in-process fake,
+  not a hand-rolled mock of `S3ObjectStore` itself.
 - Use `tests/fixtures/index_entries.make_entry(**overrides)` and
   `tests/fixtures/jwt_tokens.make_token(**overrides)` for test data; don't
   hand-construct `IndexEntry` or sign a JWT manually.
@@ -248,10 +314,14 @@ shape — don't invent a new one:
 
 ## Git/GitHub state (check before assuming otherwise)
 
-- This repo has commits on `master` but **no remote configured**
-  (`git remote -v` is empty) — no push/PR/issue workflow is possible until
-  one is added (`gh repo create` or `git remote add origin <url>` against
-  an already-created one). Don't assume a remote exists.
+- Main branch is `main` (not `master`), with `origin` configured
+  (`git@github-jaas-skills:jaas-yoga/jaas-skills.git` — note the custom SSH
+  host alias `github-jaas-skills`, not the default `github.com`; a plain
+  `git@github.com:...` remote won't authenticate the same way). Push/PR/
+  issue workflows are usable. This corrects an earlier version of this
+  skill that said no remote existed — re-check with `git remote -v`
+  yourself if this ever seems stale again, don't propagate it forward from
+  memory.
 - `gh` CLI is installed and authenticated as `balakrishna-maduru`
   (`repo`/`read:org`/`gist` scopes) — PR/issue commands will work as soon
   as a remote exists.

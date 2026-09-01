@@ -21,6 +21,18 @@ class Visibility(StrEnum):
     PRIVATE = "private"
 
 
+class ArtifactStatus(StrEnum):
+    """A post-publish status overlay (artifact/yank.py), layered on top of an
+    otherwise-immutable published record via a sidecar file that lives
+    alongside the tag manifest — never inside it, and never part of
+    index/ingest.py's (de)serialization of the manifest record itself.
+    index/bootstrap.py and index/consumer.py are the two places that read
+    the sidecar and apply it to an IndexEntry built from the tag."""
+
+    ACTIVE = "active"
+    YANKED = "yanked"
+
+
 @dataclass(frozen=True)
 class IndexEntry:
     id: str
@@ -77,3 +89,8 @@ class IndexEntry:
     # "attempted_with_findings" | "not_attempted".
     guardrail_level_statuses: tuple[tuple[int, str], ...] = ()
     guardrail_warning_check_ids: tuple[str, ...] = ()
+    # Overlaid post-hoc from the status.json sidecar (artifact/yank.py) —
+    # never read from or written into the manifest record itself. Default
+    # preserves every pre-existing call site (tests, fixtures, a tag
+    # written before this field existed) as ACTIVE.
+    status: ArtifactStatus = ArtifactStatus.ACTIVE

@@ -57,6 +57,17 @@ class LocalFilesystemStore:
                     ErrorCode.DUPLICATE_PUBLISH, f"'{key}' has already been published"
                 ) from exc
 
+    def write_object(self, key: str, data: bytes) -> None:
+        with self._span("storage.write_object"):
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Write-temp-then-rename: os.replace is atomic on the same
+            # filesystem, so a reader never observes a partial write, unlike
+            # writing `path` directly.
+            tmp_path = path.with_name(path.name + ".tmp")
+            tmp_path.write_bytes(data)
+            tmp_path.replace(path)
+
     def read(self, key: str) -> bytes:
         with self._span("storage.read"):
             return self._path(key).read_bytes()

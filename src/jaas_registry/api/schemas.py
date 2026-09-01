@@ -22,6 +22,7 @@ class SearchResultItem(BaseModel):
     visibility: str
     ownerUser: str
     ownerTenant: str
+    status: str
 
 
 class SearchResponse(BaseModel):
@@ -74,6 +75,10 @@ class SkillMetadataResponse(BaseModel):
     guardrailCertifiedLevel: int | None = None
     guardrailLevelStatuses: list[tuple[int, str]] = []
     guardrailWarningCheckIds: list[str] = []
+    # "active" | "yanked" (index/models.py's ArtifactStatus) — a direct
+    # metadata fetch always reflects the true status, even for a yanked
+    # version that a search/latest resolution would now skip.
+    status: str
 
 
 class CertificationSummaryResponse(BaseModel):
@@ -149,6 +154,19 @@ class CreateShareGrantRequest(BaseModel):
     granteeType: str
     granteeId: str
     permission: str = "read"
+
+
+class YankRequest(BaseModel):
+    reason: str | None = None
+
+
+class YankResponse(BaseModel):
+    id: str
+    version: str
+    status: str
+    reason: str | None = None
+    actor: str
+    at: str
 
 
 class ForkFromRequest(BaseModel):

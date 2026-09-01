@@ -9,6 +9,7 @@ from __future__ import annotations
 
 TAG_PREFIX = "tags/"
 TAG_MANIFEST_SUFFIX = "manifest.json"
+STATUS_SUFFIX = "status.json"
 
 
 def blob_key(digest: str) -> str:
@@ -18,3 +19,10 @@ def blob_key(digest: str) -> str:
 
 def tag_key(skill_id: str, version: str) -> str:
     return f"{TAG_PREFIX}{skill_id}/{version}/{TAG_MANIFEST_SUFFIX}"
+
+
+def status_key(skill_id: str, version: str) -> str:
+    """The yank/unyank sidecar (artifact/yank.py) — same directory as
+    tag_key's manifest, but written via write_object rather than
+    write_tag_if_absent, since this one file is meant to be overwritten."""
+    return f"{TAG_PREFIX}{skill_id}/{version}/{STATUS_SUFFIX}"

@@ -45,6 +45,26 @@ def test_list_prefix_missing_returns_empty(tmp_path):
     assert store.list_prefix("tags/nothing.here") == []
 
 
+def test_write_object_creates_a_new_key(tmp_path):
+    store = LocalFilesystemStore(tmp_path)
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "active"}')
+    assert store.read("tags/a.b.c/1.0.0/status.json") == b'{"status": "active"}'
+
+
+def test_write_object_overwrites_an_existing_key(tmp_path):
+    store = LocalFilesystemStore(tmp_path)
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "active"}')
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "yanked"}')
+    assert store.read("tags/a.b.c/1.0.0/status.json") == b'{"status": "yanked"}'
+
+
+def test_write_object_leaves_no_tmp_file_behind(tmp_path):
+    store = LocalFilesystemStore(tmp_path)
+    store.write_object("tags/a.b.c/1.0.0/status.json", b"content")
+    leftovers = [p for p in (tmp_path / "tags/a.b.c/1.0.0").iterdir() if p.name.endswith(".tmp")]
+    assert leftovers == []
+
+
 def test_key_cannot_escape_storage_root(tmp_path):
     store = LocalFilesystemStore(tmp_path)
     with pytest.raises(ValueError):

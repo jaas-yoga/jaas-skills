@@ -46,6 +46,19 @@ def test_write_blob_if_absent_is_idempotent(s3_client):
     assert store.read("blobs/sha256/abc") == b"content"
 
 
+def test_write_object_creates_a_new_key(s3_client):
+    store = make_store(s3_client)
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "active"}')
+    assert store.read("tags/a.b.c/1.0.0/status.json") == b'{"status": "active"}'
+
+
+def test_write_object_overwrites_an_existing_key(s3_client):
+    store = make_store(s3_client)
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "active"}')
+    store.write_object("tags/a.b.c/1.0.0/status.json", b'{"status": "yanked"}')
+    assert store.read("tags/a.b.c/1.0.0/status.json") == b'{"status": "yanked"}'
+
+
 def test_list_prefix_returns_sorted_relative_paths(s3_client):
     store = make_store(s3_client)
     store.write_tag_if_absent("tags/a.b.c/2.0.0/manifest.json", b"x")

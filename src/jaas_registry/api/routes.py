@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -34,19 +35,23 @@ from jaas_registry.api.schemas import (
     ShareGrantResponse,
     SkillMetadataResponse,
     SourceFilesResponse,
+    YankRequest,
+    YankResponse,
 )
 from jaas_registry.artifact.packaging import extract_archive
 from jaas_registry.artifact.verify import verify_artifact
+from jaas_registry.artifact.yank import YankRecord, write_status
 from jaas_registry.authn.tenants import MembershipStore
 from jaas_registry.authz.base import Authorizer
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.drafts.git_sync import parse_github_repo_url
-from jaas_registry.index.models import IndexEntry
+from jaas_registry.index.models import ArtifactStatus, IndexEntry
 from jaas_registry.index.query import search as run_search
 from jaas_registry.index.store import InMemoryIndex
 from jaas_registry.sharing.access import can_manage_sharing, can_view, resolve_caller_context
 from jaas_registry.sharing.models import GranteeType, ShareGrant, SharePermission
+from jaas_registry.storage.base import ObjectStore
 from jaas_registry.storage.keys import blob_key
 
 router = APIRouter(prefix="/api/v1")
@@ -123,6 +128,7 @@ def search_skills(
             visibility=scored.entry.visibility.value,
             ownerUser=scored.entry.owner_user,
             ownerTenant=scored.entry.owner_tenant,
+            status=scored.entry.status.value,
         )
         for scored in result.items
     ]
@@ -188,6 +194,7 @@ def get_skill_metadata(
         guardrailCertifiedLevel=entry.guardrail_certified_level,
         guardrailLevelStatuses=list(entry.guardrail_level_statuses),
         guardrailWarningCheckIds=list(entry.guardrail_warning_check_ids),
+        status=entry.status.value,
     )
 
 
@@ -455,20 +462,28 @@ def _require_share_management_access(
     memberships: MembershipStore,
     credentials: HTTPAuthorizationCredentials | None,
     x_tenant_id: str | None,
+    required_permissions: tuple[str, ...] = ("skills:share",),
 ) -> IndexEntry:
-    """Common guard for all three /shares endpoints (ui-design.md §7, §5.2):
-    caller must hold the skills:share scope AND either own the skill or
+    """Common guard for the /shares endpoints (ui-design.md §7, §5.2) AND
+    /yank, /unyank (IMPLEMENTATION_PLAN.md Phase 1.3, skills:write instead):
+    caller must hold `required_permissions` AND either own the skill or
     administer its owning tenant — scope alone doesn't restrict *which*
     skill, so it's necessary but not sufficient on its own."""
-    if not index.list_versions(skill_id):
+    versions = index.list_versions(skill_id)
+    if not versions:
         raise JaasError(ErrorCode.SKILL_NOT_FOUND, f"skill '{skill_id}' not found")
-    entry = index.get_resolved(skill_id, None)
-    assert entry is not None  # list_versions was non-empty, so some version resolves
+    # Deliberately index.get(), not get_resolved(): this is only used to look
+    # up owner_user/owner_tenant, which don't vary by version, so it must not
+    # come back None just because every version happens to be yanked right
+    # now (get_resolved excludes yanked versions from unconstrained
+    # resolution) — that would lock a skill's own owner out of unyanking it.
+    entry = index.get(skill_id, versions[-1])
+    assert entry is not None  # versions[-1] came from list_versions itself
 
     authorizer.check(
         token=credentials.credentials if credentials else None,
         tenant_header=x_tenant_id,
-        required_permissions=("skills:share",),
+        required_permissions=required_permissions,
     )
     caller = resolve_caller_context(
         credentials.credentials if credentials else None, settings=settings
@@ -578,6 +593,126 @@ def revoke_share(
     )
     grants.revoke(skill_id=skill_id, grant_id=grant_id)
     return Response(status_code=204)
+
+
+def _yank_response(skill_id: str, version: str, record: YankRecord) -> YankResponse:
+    return YankResponse(
+        id=skill_id,
+        version=version,
+        status=record.status.value,
+        reason=record.reason,
+        actor=record.actor,
+        at=record.at,
+    )
+
+
+def _set_version_status(
+    *,
+    skill_id: str,
+    version: str,
+    status: ArtifactStatus,
+    reason: str | None,
+    index: InMemoryIndex,
+    store: ObjectStore,
+    settings: Settings,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> YankResponse:
+    """Shared body for /yank and /unyank — same status-sidecar write, same
+    direct index.put() the other publish-adjacent routes use (release_routes.py,
+    draft_routes.py don't route through the event bus either; see
+    IMPLEMENTATION_PLAN.md Phase 1.3 for why this doesn't either)."""
+    entry = index.get(skill_id, version)
+    if entry is None:
+        if not index.list_versions(skill_id):
+            raise JaasError(ErrorCode.SKILL_NOT_FOUND, f"skill '{skill_id}' not found")
+        raise JaasError(
+            ErrorCode.VERSION_NOT_FOUND, f"version '{version}' not found for '{skill_id}'"
+        )
+
+    caller = resolve_caller_context(
+        credentials.credentials if credentials else None, settings=settings
+    )
+    record = YankRecord(
+        status=status, reason=reason, actor=caller.user_id or "", at=datetime.now(UTC).isoformat()
+    )
+    write_status(store, skill_id=skill_id, version=version, record=record)
+    index.put(dataclasses.replace(entry, status=status))
+    return _yank_response(skill_id, version, record)
+
+
+@router.post("/skills/{skill_id}/versions/{version}/yank", response_model=YankResponse)
+def yank_skill_version(
+    skill_id: str,
+    version: str,
+    body: YankRequest,
+    index: IndexDep,
+    store: StoreDep,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    memberships: MembershipStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+    x_tenant_id: Annotated[str | None, Header()] = None,
+) -> YankResponse:
+    """IMPLEMENTATION_PLAN.md Phase 1.3: flag a published version as insecure
+    or broken after the fact, without touching its immutable manifest.
+    Idempotent — yanking an already-yanked version just refreshes the
+    reason/actor/at and returns 200, never an error."""
+    _require_share_management_access(
+        index=index,
+        skill_id=skill_id,
+        settings=settings,
+        authorizer=authorizer,
+        memberships=memberships,
+        credentials=credentials,
+        x_tenant_id=x_tenant_id,
+        required_permissions=("skills:write",),
+    )
+    return _set_version_status(
+        skill_id=skill_id,
+        version=version,
+        status=ArtifactStatus.YANKED,
+        reason=body.reason,
+        index=index,
+        store=store,
+        settings=settings,
+        credentials=credentials,
+    )
+
+
+@router.post("/skills/{skill_id}/versions/{version}/unyank", response_model=YankResponse)
+def unyank_skill_version(
+    skill_id: str,
+    version: str,
+    body: YankRequest,
+    index: IndexDep,
+    store: StoreDep,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    memberships: MembershipStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+    x_tenant_id: Annotated[str | None, Header()] = None,
+) -> YankResponse:
+    """Reverses a yank — same authorization tier, same idempotent shape."""
+    _require_share_management_access(
+        index=index,
+        skill_id=skill_id,
+        settings=settings,
+        authorizer=authorizer,
+        memberships=memberships,
+        credentials=credentials,
+        x_tenant_id=x_tenant_id,
+        required_permissions=("skills:write",),
+    )
+    return _set_version_status(
+        skill_id=skill_id,
+        version=version,
+        status=ArtifactStatus.ACTIVE,
+        reason=body.reason,
+        index=index,
+        store=store,
+        settings=settings,
+        credentials=credentials,
+    )
 
 
 @router.get("/artifacts/{token}")

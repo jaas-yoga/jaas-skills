@@ -119,6 +119,10 @@ class S3ObjectStore:
                     ) from exc
                 raise
 
+    def write_object(self, key: str, data: bytes) -> None:
+        with self._span("storage.write_object"):
+            self._client.put_object(Bucket=self.bucket, Key=self._key(key), Body=data)
+
     def read(self, key: str) -> bytes:
         with self._span("storage.read"):
             response = self._client.get_object(Bucket=self.bucket, Key=self._key(key))
