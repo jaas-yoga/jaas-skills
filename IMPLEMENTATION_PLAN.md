@@ -35,7 +35,43 @@ Claude Code plan state.
 
 ## Phase 1 — Harden the foundation (0–4 weeks) — implementing now
 
-### 1.1 — Frontend test suite (Playwright + component tests) · `jaas-ui`
+### 1.1 — Frontend test suite (Playwright + component tests) · `jaas-ui` — ✅ DONE (2026-09-02)
+
+**Status: implemented and verified against the real stack.** 10/10
+component tests pass (Vitest + RTL), 3/3 E2E tests pass against a real
+`jaas-registry` + `jaas-guardrails` backend via `run.sh`, `eslint` clean.
+Discovered along the way that `jaas-ui/run.sh` already exists and
+orchestrates all three local services — this replaced the plan's original
+"hand-roll `jaasctl serve &` in CI" idea with reusing that script directly
+in the new CI job.
+
+**Deviation from plan:** no `data-testid`/`aria-label` additions to
+production components were needed — every interaction was reachable via
+existing accessible roles/labels. `entrypoint` test files ended up as
+`draft-workspace.test.tsx`/`publish-dialog.test.tsx` +
+`e2e/drafts-workflow.spec.ts` (not `validation-results-panel.test.tsx` —
+its behavior is exercised indirectly through `draft-workspace.test.tsx`'s
+Validate tests instead of a standalone file, since it's a trivial pure
+render with no logic of its own worth isolating).
+
+**Real bugs the tests caught before shipping (not in the original plan,
+found via TDD):** (1) the autosave debounce calls `saveDraftFileAction`
+with `undefined` as its options argument, not an explicit
+`{ syncToGit: false }` — relies on that function's own default parameter;
+the plan's assumed call shape was wrong. (2) Driving Monaco from
+Playwright naively (select-all + type) silently **appended** new content
+instead of replacing it, and multi-line `keyboard.insertText()` still
+triggers Monaco's per-Enter auto-indent, corrupting YAML — both fixed and
+documented in `jaas-frontend-conventions/SKILL.md` as reusable patterns
+for future E2E specs touching the editor.
+
+**Known gap, not fixed:** CI's new `e2e` job needs a `CI_DEV_LOGIN_PASSWORD`
+GitHub Actions secret on `jaas-ui` to actually pass — this requires
+repo-admin access to configure and was flagged, not set, since it's outside
+what a code change can do.
+
+**Original plan text below, for reference — see the deviations above for
+what actually shipped.**
 
 **What we're building:** The app currently has zero automated test
 coverage — no test runner, no config, no test files (verified: no `"test"`
