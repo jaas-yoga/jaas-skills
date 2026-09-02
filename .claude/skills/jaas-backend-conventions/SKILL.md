@@ -519,6 +519,56 @@ purpose:
   doesn't resolve to any version is **excluded**, not included — never
   guess a tenant in the direction that could leak a record cross-tenant.
 
+## Usage-based ranking (Phase 3.1, `index/usage.py`, `index/query.py`)
+
+- **`UsageCounter` (`index/usage.py`) is in-process/per-replica and
+  intentionally NOT durable on its own** — `record()` is a cheap,
+  lock-guarded in-memory increment (called from `create_artifact_token`,
+  unconditionally, regardless of `feature_flags.usage_ranking_enabled`),
+  and `flush_usage_counts_periodically()` is what actually persists it:
+  merges the replica's drained delta additively into one shared
+  `Settings.usage_dir/usage_counts.json`, then resets to zero. Same
+  loop shape as `index/background_sync.py::reconcile_periodically()`
+  (check `stop_event` before each iteration; setting it before the first
+  tick means the flush body never runs) — reused deliberately, not
+  coincidentally, since both are "periodic, eventually-consistent,
+  correct-by-construction across replicas" by design.
+- **Do NOT reach for the audit-log pattern (`common/audit_store.py`'s
+  `FileAuditSink`, one file-append per event) for anything that fires on
+  a genuinely hot path.** `design.md §9.2` documents ~80 RPS average on
+  `create_artifact_token` specifically — that's the volume/frequency
+  ceiling that ruled out a per-event durable write here. Audit events
+  (publish/yank/share-change/config-change) are human-triggered and
+  orders of magnitude rarer; usage events are not. If you're adding
+  tracking for anything else that fires per-request rather than
+  per-human-action, check its expected RPS against `design.md §9.2`
+  before picking a storage shape, not just copying whichever pattern is
+  closest by analogy.
+- **`index/query.py::search()`'s `usage_counts` param defaults to
+  `None`, and that must stay a true no-op** — every test that predates
+  Phase 3.1 (and every caller that doesn't explicitly opt in) relies on
+  `usage_counts=None` being byte-identical to pre-3.1 ranking. The usage
+  score is added *after* the query-match filter (`if query and
+  text_score == 0.0: continue`), so a high usage count can never leak an
+  irrelevant result into a specific-query search — but it's applied
+  *unconditionally* otherwise, including the no-query browse path, by
+  deliberate product decision (confirmed with the user): a query-less
+  browse's pre-existing fallback was pure alphabetical-by-id, which was
+  never a deliberate ranking choice, just what's left with nothing to
+  score against.
+- **`FeatureFlags.usage_ranking_enabled` gates only the read side** —
+  `api/routes.py::search_skills` only calls `read_usage_counts()` when
+  it's on. Collection (the `record()` call + the periodic flush task in
+  `api/app.py`'s lifespan) always runs regardless of the flag, on
+  purpose, so real usage data is already warm the moment an operator
+  flips ranking on instead of starting from zero. Don't gate the write
+  side too if you touch this — that would defeat the whole point of
+  having the flag be a pure ranking on/off switch.
+- `usage_score()`'s log-scaling saturation constant and `WEIGHT_USAGE`
+  in `index/query.py` are both starting points, not data-derived — no
+  real usage data exists yet to calibrate against. Fine to retune once
+  it does; don't treat either as load-bearing precision.
+
 ## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
 
 - **Two signature kinds coexist permanently, not just during a

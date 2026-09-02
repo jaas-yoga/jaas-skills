@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from jaas_registry.index.models import IndexEntry, Visibility
 from jaas_registry.index.runtime_filter import runtime_matches
 from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.index.usage import usage_score
 from jaas_registry.sharing.access import (
     ANONYMOUS,
     CallerContext,
@@ -25,6 +26,12 @@ WEIGHT_OWNER = 0.5
 WEIGHT_TAG = 0.4
 WEIGHT_CATEGORY = 0.3
 WEIGHT_DESCRIPTION = 0.2
+# IMPLEMENTATION_PLAN.md Phase 3.1: a supporting signal, not a dominant
+# one — comparable in magnitude to WEIGHT_CATEGORY, deliberately well
+# below WEIGHT_EXACT_ID/WEIGHT_NAME, so popularity nudges ranking rather
+# than overriding actual query relevance. A starting point, not tuned
+# against real usage data (none exists yet).
+WEIGHT_USAGE = 0.3
 
 
 @dataclass(frozen=True)
@@ -73,12 +80,25 @@ def search(
     page_size: int = 20,
     caller: CallerContext = ANONYMOUS,
     grants: GrantStore | None = None,
+    usage_counts: dict[str, int] | None = None,
 ) -> SearchPage:
     """`caller`/`grants` apply ui-design.md §5.4's visibility filter — an
     anonymous caller (the default) only ever sees PUBLIC entries, matching
     this endpoint's pre-existing no-auth-required behavior exactly for
     every entry that predates the visibility model (defaults to PUBLIC,
-    see index/models.py)."""
+    see index/models.py).
+
+    `usage_counts` (IMPLEMENTATION_PLAN.md Phase 3.1) is None by default —
+    every existing caller that doesn't pass it gets byte-identical
+    behavior to before this feature existed. `api/routes.py::search_skills`
+    only passes a real dict when `feature_flags.usage_ranking_enabled` is
+    on; a missing skill_id in the dict scores as zero usage, never an
+    error. Applied unconditionally (including to a query-less browse,
+    where every candidate's text score is 0.0 and today's fallback is
+    purely alphabetical-by-id) — deliberate, not just a tiebreak within
+    query matches, since query-less browsing is exactly where a
+    popularity signal is most valuable and today has no relevance signal
+    at all."""
     candidates: list[ScoredEntry] = []
     # IMPLEMENTATION_PLAN.md Phase 3.2: computed at most once per search()
     # call, lazily (only if a non-public candidate is actually hit) — the
@@ -110,9 +130,16 @@ def search(
             ):
                 continue
 
-        score = score_entry(entry, query) if query else 0.0
-        if query and score == 0.0:
+        text_score = score_entry(entry, query) if query else 0.0
+        if query and text_score == 0.0:
             continue
+
+        score = text_score
+        if usage_counts is not None:
+            # Added after the query-match filter above, on purpose — a
+            # popular-but-irrelevant skill must never leak into a
+            # specific-query search just because of its usage count.
+            score += WEIGHT_USAGE * usage_score(usage_counts.get(entry.id, 0))
 
         candidates.append(ScoredEntry(entry=entry, score=score))
 

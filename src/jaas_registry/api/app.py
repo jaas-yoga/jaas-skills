@@ -40,6 +40,7 @@ from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
 from jaas_registry.guardrails.policy import GuardrailPolicyStore
 from jaas_registry.index.background_sync import reconcile_periodically
 from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.index.usage import UsageCounter, flush_usage_counts_periodically
 from jaas_registry.observability.tracing import build_tracer
 from jaas_registry.sharing.grants import GrantStore
 from jaas_registry.storage.base import ObjectStore
@@ -58,6 +59,7 @@ def create_app(
     membership_store: MembershipStore | None = None,
     refresh_token_store: RefreshTokenStore | None = None,
     grant_store: GrantStore | None = None,
+    usage_counter: UsageCounter | None = None,
     draft_store: DraftStore | None = None,
     invite_store: InviteStore | None = None,
     pat_store: PatStore | None = None,
@@ -71,6 +73,8 @@ def create_app(
     guardrails_client: GuardrailsClient | None = None,
     tracer: Tracer | None = None,
 ) -> FastAPI:
+    resolved_usage_counter = usage_counter or UsageCounter()
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # index/background_sync.py: the real multi-replica index-sync
@@ -88,16 +92,35 @@ def create_app(
                 )
             )
         _app.state.background_reconciliation_task = task
+
+        # IMPLEMENTATION_PLAN.md Phase 3.1: always runs, independent of
+        # feature_flags.usage_ranking_enabled — collection is separate
+        # from whether search() actually reads the data yet, so real
+        # counts are already warm the moment an operator flips the
+        # ranking flag on, rather than starting from zero.
+        usage_stop_event = asyncio.Event()
+        usage_flush_task = asyncio.create_task(
+            flush_usage_counts_periodically(
+                resolved_usage_counter,
+                settings.usage_dir,
+                interval_seconds=settings.usage_flush_interval_seconds,
+                stop_event=usage_stop_event,
+            )
+        )
+        _app.state.usage_flush_task = usage_flush_task
         try:
             yield
         finally:
             stop_event.set()
             if task is not None:
                 await task
+            usage_stop_event.set()
+            await usage_flush_task
 
     app = FastAPI(title="JaaS Skills", version="0.1.0", lifespan=lifespan)
     app.state.index = index
     app.state.store = store
+    app.state.usage_counter = resolved_usage_counter
     app.state.settings = settings
     app.state.authorizer = authorizer or AllowAllAuthorizer()
     app.state.token_issuer = token_issuer or ArtifactTokenIssuer(

@@ -27,6 +27,7 @@ from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
 from jaas_registry.guardrails.models import GuardrailDefinition
 from jaas_registry.guardrails.policy import GuardrailPolicyStore
 from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.index.usage import UsageCounter
 from jaas_registry.sharing.grants import GrantStore
 from jaas_registry.storage.base import ObjectStore
 
@@ -73,6 +74,10 @@ def get_refresh_token_store(request: Request) -> RefreshTokenStore:
 
 def get_grant_store(request: Request) -> GrantStore:
     return request.app.state.grant_store
+
+
+def get_usage_counter(request: Request) -> UsageCounter:
+    return request.app.state.usage_counter
 
 
 def get_draft_store(request: Request) -> DraftStore:
@@ -158,6 +163,7 @@ MembershipStoreDep = Annotated[MembershipStore, Depends(get_membership_store)]
 RefreshTokenStoreDep = Annotated[RefreshTokenStore, Depends(get_refresh_token_store)]
 GoogleVerifierDep = Annotated[GoogleIdentityVerifier | None, Depends(get_google_verifier)]
 GrantStoreDep = Annotated[GrantStore, Depends(get_grant_store)]
+UsageCounterDep = Annotated[UsageCounter, Depends(get_usage_counter)]
 DraftStoreDep = Annotated[DraftStore, Depends(get_draft_store)]
 InviteStoreDep = Annotated[InviteStore, Depends(get_invite_store)]
 PatStoreDep = Annotated[PatStore, Depends(get_pat_store)]

@@ -21,6 +21,7 @@ from jaas_registry.api.deps import (
     StoreDep,
     TokenIssuerDep,
     TrustPolicyDep,
+    UsageCounterDep,
 )
 from jaas_registry.api.schemas import (
     ArtifactTokenResponse,
@@ -60,6 +61,7 @@ from jaas_registry.drafts.git_sync import parse_github_repo_url
 from jaas_registry.index.models import ArtifactStatus, IndexEntry
 from jaas_registry.index.query import search as run_search
 from jaas_registry.index.store import InMemoryIndex
+from jaas_registry.index.usage import read_usage_counts
 from jaas_registry.sharing.access import can_manage_sharing, can_view, resolve_caller_context
 from jaas_registry.sharing.models import GranteeType, ShareGrant, SharePermission
 from jaas_registry.storage.base import ObjectStore
@@ -114,6 +116,15 @@ def search_skills(
         _bearer_token(authorization), settings=settings, pat_store=pat_store
     )
     tag_list = [t for t in tags.split(",") if t] if tags else None
+    # IMPLEMENTATION_PLAN.md Phase 3.1: only read when the flag is on —
+    # index/query.py::search() treats usage_counts=None as "feature off,"
+    # byte-identical to pre-3.1 behavior. Collection (create_artifact_token
+    # below) runs unconditionally either way.
+    usage_counts = (
+        read_usage_counts(settings.usage_dir)
+        if settings.feature_flags.usage_ranking_enabled
+        else None
+    )
     result = run_search(
         index,
         query=query,
@@ -125,6 +136,7 @@ def search_skills(
         page_size=pageSize,
         caller=caller,
         grants=grants,
+        usage_counts=usage_counts,
     )
     items = [
         SearchResultItem(
@@ -447,6 +459,7 @@ def create_artifact_token(
     settings: SettingsDep,
     token_issuer: TokenIssuerDep,
     authorizer: AuthorizerDep,
+    usage_counter: UsageCounterDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
     x_tenant_id: Annotated[str | None, Header()] = None,
 ) -> ArtifactTokenResponse:
@@ -456,6 +469,14 @@ def create_artifact_token(
         tenant_header=x_tenant_id,
         required_permissions=entry.permissions,
     )
+
+    # IMPLEMENTATION_PLAN.md Phase 3.1: the usage-ranking signal. Issuing
+    # this token is the proxy for "someone is about to download this
+    # version" — every real download path (jaasctl pull/install/export)
+    # hits this endpoint first (artifact/publish.py's own module doesn't,
+    # publish never issues a token). Recorded unconditionally, regardless
+    # of feature_flags.usage_ranking_enabled — see api/app.py's lifespan.
+    usage_counter.record(entry.id)
 
     record = token_issuer.issue(
         blob_key=blob_key(entry.digest),

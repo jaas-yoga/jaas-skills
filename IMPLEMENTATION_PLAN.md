@@ -670,33 +670,113 @@ which now starts the background task itself.
 
 ---
 
-## Phase 3 — Compete on trust (3–6 months)
+## Phase 3 — Compete on trust (3–6 months) — ✅ ALL FOUR ITEMS DONE (2026-09-02)
 
-**Status (2026-09-02):** 3.2, 3.3, and 3.4 done this session, each
-preceded by an Explore pass that found the roadmap's own descriptions
-undersold, mismatched, or overstated real scope (see their sections
-below) — 3.2 in particular shipped a deliberately *narrower* fix than
-its literal wording implied, confirmed with the user first, since the
-wider version would have taken on real security risk nothing in the
-codebase currently justifies. Only 3.1 (usage-based ranking) remains not
-started — still gets its own Explore→Plan pass before implementation,
-per this document's process, and remains the one item on this whole
-roadmap that genuinely needs new data-collection infrastructure plus a
-live-ranking rollout plan, not just a targeted fix to existing code.
+**Status:** 3.1, 3.2, 3.3, and 3.4 all done this session, each preceded
+by an Explore pass that found the roadmap's own descriptions undersold,
+mismatched, or overstated real scope (see their sections below) — 3.2
+shipped a deliberately *narrower* fix than its literal wording implied
+(confirmed with the user first, since the wider version would have taken
+on real security risk nothing in the codebase justified), and 3.1
+shipped both a smaller piece (no new endpoint needed) and a bigger one
+(real storage-engineering work the roadmap's one-liner didn't surface)
+than its description implied, plus one real product decision confirmed
+with the user (usage ranking applies to query-less browsing, not just
+query-matched results).
 
-### 3.1 — Usage-based discovery ranking · `jaas-registry`
+### 3.1 — Usage-based discovery ranking · `jaas-registry` — ✅ DONE (2026-09-02)
 
-**What:** Search ranking today is static token-matching with no usage
-signal. Adds usage-event collection (net-new — nothing tracks this today)
-feeding into `index/query.py`'s ranking.
-**Breaking-change risk:** Medium — changes real search result ordering
-for every existing query; needs a rollout plan (e.g. behind a flag,
-A/B-able) rather than a silent ranking-algorithm swap, since it changes
-what users see for the same query.
-**Improves:** Surfaces the curation signal the roadmap's own research
-shows matters (16.2-point measured task-success gap for curated results).
-**Impacted areas (preliminary):** `index/query.py`, a new usage-tracking
-store, likely a new API endpoint or middleware to record usage events.
+**Two scope corrections found via an Explore pass before coding — one
+making the item smaller than the roadmap implied, one making it bigger:**
+- **Smaller on "what counts as a usage event":** no new endpoint or
+  middleware was needed. `POST /skills/{id}/versions/{version}/artifact-
+  token` already existed and is already the single hook every real
+  download path goes through (`jaasctl pull`/`install`/`export`, per
+  Phase 2.2's `_download_skill_files`) — instrumenting its existing
+  handler body was simpler than the roadmap's guess of "likely a new API
+  endpoint or middleware." (`design.md §7.3` item 2 had separately
+  anticipated "emit retrieval events" for audit purposes years earlier
+  and it was never built either — this closes that gap as a side effect,
+  though usage counting and audit logging remain two separate concerns
+  with two separate stores, not merged into one.)
+- **Bigger on storage engineering:** `design.md §9.2`'s own documented
+  capacity assumption is ~80 RPS average on that exact endpoint — roughly
+  6.9M events/day. The audit log's one-file-append-per-event pattern
+  (Phase 3.3's `FileAuditSink`) would be the wrong model to copy at that
+  volume; this needed a genuinely different storage shape (in-process
+  aggregation + periodic merged flush) with no precedent elsewhere in
+  this codebase, not just "a new usage-tracking store" as a peer of
+  `GrantStore`.
+
+**A real product decision, confirmed with the user before building:**
+today, browsing with no search query sorts purely alphabetically by id —
+there's no relevance signal in that case at all. Usage ranking is most
+valuable exactly there, but it changes the *default* Browse order for
+every caller, not just an edge case within query-matched results.
+Confirmed: apply the usage signal everywhere, including query-less
+browsing — matches the roadmap's own stated goal ("surfaces the curation
+signal") most directly, since today's alphabetical fallback was never a
+deliberate ranking choice, just what's left with nothing to score
+against.
+
+**What we built:**
+- `index/usage.py::UsageCounter` — an in-process, per-replica counter
+  (`record()`/`drain()`, lock-guarded, O(1), zero I/O on the hot
+  artifact-token-issuance path). `flush_usage_counts()` merges a
+  replica's drained delta additively into one shared durable
+  `usage_counts.json` under a new `Settings.usage_dir`; `flush_usage_
+  counts_periodically()` runs that on a timer (`Settings.usage_flush_
+  interval_seconds`, default 60s) — same "periodic, eventually
+  consistent, safe by construction" shape Phase 2.4's
+  `reconcile_periodically()` established for multi-replica index sync,
+  reused here because usage data tolerates staleness (and even a rare
+  lost increment under a concurrent-flush race) far better than index or
+  grant correctness does. `usage_score()` log-scales a raw count into
+  roughly `[0, 1]` with diminishing returns, so one viral skill can't
+  swamp ranking regardless of query relevance.
+- `index/query.py::search()` gains `usage_counts: dict[str, int] | None
+  = None` (default preserves every existing caller's exact behavior) and
+  a new `WEIGHT_USAGE = 0.3` (comparable to `WEIGHT_CATEGORY`,
+  deliberately below `WEIGHT_EXACT_ID`/`WEIGHT_NAME` — a supporting
+  signal, not a dominant one). Applied *after* the query-match filter
+  (so a popular-but-irrelevant skill can never leak into a specific
+  search), but unconditionally including the no-query path, per the
+  product decision above.
+- `FeatureFlags.usage_ranking_enabled` (default **off**) gates only the
+  *read* side — `api/routes.py::search_skills` only calls `read_usage_
+  counts()` and passes real data into `search()` when it's on.
+  Collection (recording + the periodic flush) always runs regardless of
+  the flag, so real data is already warm the moment an operator turns
+  ranking on, rather than starting from zero.
+
+**Does it break anything?** No — verified with `usage_counts=None`
+byte-identical-to-before regression tests, a dedicated test proving a
+high usage count can never surface a non-matching result for a specific
+query, and an end-to-end integration test suite that issues real
+artifact-tokens over real HTTP requests and confirms search ordering
+only changes when the flag is on. `test_artifact_token_p95_latency_
+within_slo` (an existing perf test that exercises the new `record()`
+call unconditionally) still passes — the new hot-path work is genuinely
+O(1)/in-memory.
+
+**What it improves:** Surfaces the curation signal the roadmap's own
+cited research shows matters (16.2-point measured task-success gap for
+curated results) — and does so specifically for query-less Browse, which
+had zero relevance signal at all before this.
+
+**Impacted areas (actual):** new `src/jaas_registry/index/usage.py`;
+`index/query.py` (`WEIGHT_USAGE`, `usage_counts` param); `common/config.py`
+(`usage_dir`, `usage_flush_interval_seconds`, `FeatureFlags.usage_
+ranking_enabled`); `api/app.py` (`UsageCounter` construction + periodic
+flush task, always-on, wired into the existing lifespan alongside Phase
+2.4's reconciliation task); `api/deps.py` (`UsageCounterDep`);
+`api/routes.py` (`create_artifact_token` records; `search_skills` reads,
+flag-gated). New tests: `tests/unit/test_index_usage.py` (14 tests),
+5 new cases in `tests/unit/test_query.py`, `tests/integration/
+test_usage_ranking.py` (4 end-to-end HTTP tests). 794 → 817 backend
+tests passing; ruff clean; no new mypy errors.
+
+**This completes Phase 3 in full — all four items (3.1–3.4) done.**
 
 ### 3.2 — Grant-lookup caching for sharing at scale · `jaas-registry` — ✅ DONE (2026-09-02)
 

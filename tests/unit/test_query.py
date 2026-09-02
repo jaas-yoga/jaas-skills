@@ -260,3 +260,72 @@ class TestGrantLookupIsRequestScopedNotPerCandidate:
         page = search(index, caller=caller, grants=grants)
 
         assert [i.entry.id for i in page.items] == ["acme.text.visible"]
+
+
+class TestUsageBasedRanking:
+    """IMPLEMENTATION_PLAN.md Phase 3.1. usage_counts=None (the default)
+    must be byte-identical to pre-Phase-3.1 behavior — every existing test
+    above passes usage_counts nowhere and must keep passing unchanged."""
+
+    def test_usage_counts_none_is_unchanged_from_before_this_feature(self):
+        a = make_entry(id="acme.text.a", name="Zed")
+        b = make_entry(id="acme.text.b", name="Alpha")
+        index = _index_with(a, b)
+
+        page = search(index)
+
+        # No query, no usage_counts: falls back to the pre-existing
+        # alphabetical-by-id tiebreak (score 0.0 for everyone).
+        assert [i.entry.id for i in page.items] == ["acme.text.a", "acme.text.b"]
+
+    def test_no_query_browse_sorts_by_usage_when_usage_counts_given(self):
+        popular = make_entry(id="acme.text.popular", name="Zed")
+        unpopular = make_entry(id="acme.text.unpopular", name="Alpha")
+        index = _index_with(popular, unpopular)
+
+        page = search(index, usage_counts={"acme.text.popular": 500, "acme.text.unpopular": 1})
+
+        assert [i.entry.id for i in page.items] == [
+            "acme.text.popular",
+            "acme.text.unpopular",
+        ]
+
+    def test_unrecorded_skill_defaults_to_zero_usage_not_an_error(self):
+        entry = make_entry(id="acme.text.new")
+        index = _index_with(entry)
+
+        page = search(index, usage_counts={"some.other.skill": 100})
+
+        assert page.total == 1
+
+    def test_usage_never_surfaces_a_result_that_does_not_match_the_query(self):
+        """A high usage count must not leak an irrelevant result into a
+        specific-query search — usage only re-ranks within real matches
+        (and unconditionally for no-query browsing), never bypasses the
+        query-match filter itself."""
+        very_popular_but_irrelevant = make_entry(
+            id="acme.text.popular", name="Completely Unrelated Thing"
+        )
+        matches_query = make_entry(id="acme.text.match", name="Special Widget")
+        index = _index_with(very_popular_but_irrelevant, matches_query)
+
+        page = search(
+            index,
+            query="Special Widget",
+            usage_counts={"acme.text.popular": 10_000, "acme.text.match": 0},
+        )
+
+        assert [i.entry.id for i in page.items] == ["acme.text.match"]
+
+    def test_usage_boosts_ranking_among_multiple_query_matches(self):
+        low_usage = make_entry(id="acme.text.low", name="Widget Low")
+        high_usage = make_entry(id="acme.text.high", name="Widget High")
+        index = _index_with(low_usage, high_usage)
+
+        page = search(
+            index,
+            query="widget",
+            usage_counts={"acme.text.low": 0, "acme.text.high": 100},
+        )
+
+        assert [i.entry.id for i in page.items] == ["acme.text.high", "acme.text.low"]

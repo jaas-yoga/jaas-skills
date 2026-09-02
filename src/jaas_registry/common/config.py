@@ -36,6 +36,15 @@ class FeatureFlags(BaseSettings):
     # at today's tested corpus size; revisit the default once the roadmap's
     # 50k-package scale target is load-tested (Phase 4.4).
     background_index_reconciliation: bool = True
+    # IMPLEMENTATION_PLAN.md Phase 3.1: gates whether index/query.py::search()
+    # blends usage counts (index/usage.py) into ranking. Off by default —
+    # this changes real search/browse ordering for every caller, so it's an
+    # explicit opt-in, not a silent ranking-algorithm swap (the roadmap's
+    # own risk note). Collection (create_artifact_token recording +
+    # periodic flush) always runs regardless of this flag, so real data is
+    # already warm by the time an operator turns ranking on — only the
+    # read side into search() is gated.
+    usage_ranking_enabled: bool = False
 
 
 class Settings(BaseSettings):
@@ -60,6 +69,22 @@ class Settings(BaseSettings):
     # content-addressed artifacts, and from policy_dir: audit is an
     # append-only log, not an entity store keyed for point lookups.
     audit_dir: Path = Path(".local_registry/audit")
+    # index/usage.py — Phase 3.1's usage-ranking signal. Distinct from
+    # audit_dir on purpose: design.md §9.2 documents ~80 RPS average on
+    # the artifact-token endpoint this counts, which the audit log's
+    # one-file-append-per-event pattern cannot absorb (~6.9M events/day at
+    # that rate) — this is aggregated in-process (index/usage.py's
+    # UsageCounter) and flushed as periodic merged totals instead, never
+    # one file write per event.
+    usage_dir: Path = Path(".local_registry/usage")
+    # How often the in-process usage counter is flushed into the shared
+    # durable counts file (index/usage.py). Independent of
+    # index_reconciliation_interval_seconds below — usage data tolerates
+    # more staleness than index correctness does, so this can run more
+    # frequently without the cost concern that setting's own comment
+    # documents (a full store listing/rebuild vs. this: a cheap in-memory
+    # dict merge).
+    usage_flush_interval_seconds: float = 60.0
 
     storage_backend: Literal["local", "s3"] = "local"
     storage_s3_bucket: str | None = None
