@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from jaas_registry.index.models import IndexEntry, Visibility
 from jaas_registry.index.runtime_filter import runtime_matches
 from jaas_registry.index.store import InMemoryIndex
-from jaas_registry.sharing.access import ANONYMOUS, CallerContext, can_view
+from jaas_registry.sharing.access import (
+    ANONYMOUS,
+    CallerContext,
+    can_view,
+    visible_skill_ids_via_grants,
+)
 from jaas_registry.sharing.grants import GrantStore
 
 # Weights mirror design.md §6.3, kept in sync with §3.2.3's weighted-field list.
@@ -75,6 +80,13 @@ def search(
     every entry that predates the visibility model (defaults to PUBLIC,
     see index/models.py)."""
     candidates: list[ScoredEntry] = []
+    # IMPLEMENTATION_PLAN.md Phase 3.2: computed at most once per search()
+    # call, lazily (only if a non-public candidate is actually hit) — the
+    # request-scoped mitigation ui-implementation-plan.md's risk register
+    # specified, replacing what would otherwise be one
+    # grants.list_for_skill() file read per non-public candidate with two
+    # fixed-cost grants.list_for_grantee() calls for the whole request.
+    visible_skill_ids: set[str] | None = None
     for skill_id in index.all_ids():
         entry = index.get_resolved(skill_id, version_constraint)
         if entry is None:
@@ -90,10 +102,13 @@ def search(
         # ordered after the category/tags/runtime filters above so it only
         # runs against whatever already survived those (typically a small
         # fraction of the corpus), not every entry in the index.
-        if entry.visibility != Visibility.PUBLIC and not can_view(
-            entry, caller=caller, grants=grants
-        ):
-            continue
+        if entry.visibility != Visibility.PUBLIC:
+            if visible_skill_ids is None and grants is not None:
+                visible_skill_ids = visible_skill_ids_via_grants(caller, grants)
+            if not can_view(
+                entry, caller=caller, grants=grants, _visible_skill_ids=visible_skill_ids
+            ):
+                continue
 
         score = score_entry(entry, query) if query else 0.0
         if query and score == 0.0:

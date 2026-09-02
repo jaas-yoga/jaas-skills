@@ -672,14 +672,17 @@ which now starts the background task itself.
 
 ## Phase 3 — Compete on trust (3–6 months)
 
-**Status (2026-09-02):** 3.3 and 3.4 done this session, both preceded by
-an Explore pass that found the roadmap's own descriptions undersold or
-mismatched real scope (see their sections below). Only 3.1 (usage-based
-ranking) and 3.2 (grant-lookup caching) remain not started — the two
-items the roadmap itself already flagged as medium breaking-change risk,
-needing careful rollout/correctness design, not just UI/persistence
-plumbing. Each still gets its own Explore→Plan pass before
-implementation, per this document's process.
+**Status (2026-09-02):** 3.2, 3.3, and 3.4 done this session, each
+preceded by an Explore pass that found the roadmap's own descriptions
+undersold, mismatched, or overstated real scope (see their sections
+below) — 3.2 in particular shipped a deliberately *narrower* fix than
+its literal wording implied, confirmed with the user first, since the
+wider version would have taken on real security risk nothing in the
+codebase currently justifies. Only 3.1 (usage-based ranking) remains not
+started — still gets its own Explore→Plan pass before implementation,
+per this document's process, and remains the one item on this whole
+roadmap that genuinely needs new data-collection infrastructure plus a
+live-ranking rollout plan, not just a targeted fix to existing code.
 
 ### 3.1 — Usage-based discovery ranking · `jaas-registry`
 
@@ -695,19 +698,83 @@ shows matters (16.2-point measured task-success gap for curated results).
 **Impacted areas (preliminary):** `index/query.py`, a new usage-tracking
 store, likely a new API endpoint or middleware to record usage events.
 
-### 3.2 — Grant-lookup caching for sharing at scale · `jaas-registry`
+### 3.2 — Grant-lookup caching for sharing at scale · `jaas-registry` — ✅ DONE (2026-09-02)
 
-**What:** A cache layer in front of `GrantStore` lookups (already flagged
-as an unmitigated risk in the UI design doc's own risk register).
-**Breaking-change risk:** Medium if cache invalidation is wrong — a stale
-grant cache could either wrongly deny access (availability bug) or wrongly
-allow it (security bug) after a grant is revoked. This needs correctness
-scrutiny, not just a cache-aside performance patch.
-**Improves:** Sharing/visibility checks under real tenant/grant-count
-scale (fine at prototype scale today).
-**Impacted areas (preliminary):** wherever `GrantStore` is defined and
-consumed — the same routes touched by Phase 1.3's yank authorization
-(`api/routes.py`'s `_require_share_management_access` and its callers).
+**Design correction found via an Explore pass before coding — the
+roadmap's "cache layer... at scale" framing overstated what the actual
+cited source justifies, and a wider fix was rejected on purpose:**
+`ui-implementation-plan.md`'s risk register (item 2) — the exact
+document the roadmap cites — specifies **request-scoped memoization**
+("cache per-user visible-tenant-id/grant sets for the request's
+lifetime") as its designed mitigation, not a cross-request/process-
+lifetime cache. That distinction matters: a cross-request cache is the
+*only* shape that carries the "wrongly allow access after a revoked
+grant" security risk the roadmap warns about, since it would outlive the
+request that created it. Nothing in the codebase justifies taking on
+that risk — no grant-count scale target exists anywhere (`design.md`'s
+own §9.2 capacity table has one for skills/query-throughput/artifact-
+tokens, but not grants), and the register's own honest note already
+records that the *measured* problem (N `GrantStore.list_for_skill()` file
+reads, one per non-public search candidate, per request) was already
+partially absorbed by an earlier, cheaper mitigation (filter reordering
++ a `Visibility.PUBLIC` fast-path, moving the budget from 150ms to
+160ms — a 10ms regression already tolerated, not an active SLO breach).
+Confirmed with the user before building the narrower, originally-
+designed fix instead of the wider one the roadmap's paraphrase implied.
+
+**What we built:** `sharing/access.py::visible_skill_ids_via_grants()` —
+computes the full set of skill ids a caller can see via an explicit
+grant (their own + their active tenant's) in exactly two
+`GrantStore.list_for_grantee()` calls, regardless of how many search
+candidates there are. `index/query.py::search()` calls this **at most
+once per request**, lazily (only if a non-public candidate is actually
+reached — an all-public result set pays nothing extra), and threads the
+precomputed set through every `can_view()` call in its filtering loop via
+a new `_visible_skill_ids` parameter. This replaces what was previously
+one `grants.list_for_skill()` file read *per non-public candidate* with
+a fixed cost of two reads *per request*. `can_view()`'s existing
+single-entry callers (`get_skill_metadata`, `_require_viewable_entry`,
+draft fork-from-existing) are completely unaffected — they never pass
+`_visible_skill_ids`, so they fall through to the exact
+`grants.list_for_skill(entry.id)` path that already existed, unchanged.
+The cache **dies with the request** (it's a local variable in one
+`search()` call) — there is no invalidation story to design because
+there is nothing that outlives a single request to invalidate.
+
+**Does it break anything?** No — verified with a dedicated regression
+test asserting identical search results before/after (same skills
+visible to the same callers via user grants, tenant grants, ownership,
+and public visibility), plus a new test asserting `GrantStore` call
+count stays at 0 `list_for_skill` calls (down from one-per-candidate)
+across 25 shared candidate skills in a single request. The pre-existing
+`test_revoking_a_grant_immediately_removes_visibility` test (a *direct*
+`can_view()` call, not through `search()`) still passes unchanged,
+confirming revocation still takes effect immediately for every call path
+that isn't the new request-scoped one — and the request-scoped path
+can't go stale across requests by construction, since nothing persists
+between them.
+
+**What it improves:** Closes the risk register's own acknowledged gap
+("the caching half of this mitigation was not built") for the actual
+problem it measured, with zero new invalidation-correctness surface
+area. If real grant/tenant counts ever do grow enough to matter, the
+register's own suggested next step — a denormalized "visible to" field
+on the index entry, eliminating the grant-store round trip from the
+search hot path entirely — remains the documented path forward; this
+item doesn't block it or need un-doing to get there.
+
+**Impacted areas (actual):** `src/jaas_registry/sharing/access.py`
+(new `visible_skill_ids_via_grants()`, `can_view()` gains an internal
+`_visible_skill_ids` parameter), `src/jaas_registry/index/query.py`
+(`search()` computes and threads it through its filtering loop).
+`api/routes.py`/`GrantStore` itself/`_require_share_management_access`
+— **not touched**, contrary to the roadmap's preliminary guess; those
+are the cold-path share-management routes, not the hot path this item
+actually addresses. New tests in `tests/unit/test_query.py`: a missing
+tenant-grant-visibility case the existing suite hadn't covered, plus a
+`TestGrantLookupIsRequestScopedNotPerCandidate` class (call-count
+assertion + result-parity assertion). 791 → 794 backend tests passing;
+ruff clean; no new mypy errors.
 
 ### 3.3 — Governance surface: audit export, identity fields, EU AI Act mapping · `jaas-registry` — ✅ DONE (2026-09-02)
 

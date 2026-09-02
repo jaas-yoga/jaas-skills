@@ -165,3 +165,98 @@ class TestVisibilityFilter:
         page = search(index, category="nlp", caller=caller)
 
         assert page.total == 0
+
+    def test_tenant_grant_makes_a_private_entry_visible_to_every_member_of_that_tenant(
+        self, tmp_path
+    ):
+        private = make_entry(
+            id="acme.text.private", visibility=Visibility.PRIVATE, owner_tenant="tnt_owner"
+        )
+        index = _index_with(private)
+        grants = GrantStore(tmp_path)
+        grants.create(
+            skill_id="acme.text.private",
+            grantee_type=GranteeType.TENANT,
+            grantee_id="tnt_grantee",
+            permission=SharePermission.READ,
+            granted_by="usr_owner",
+        )
+        caller = CallerContext(user_id="usr_member", tenant_id="tnt_grantee")
+
+        page = search(index, caller=caller, grants=grants)
+
+        assert page.total == 1
+
+
+class TestGrantLookupIsRequestScopedNotPerCandidate:
+    """IMPLEMENTATION_PLAN.md Phase 3.2: ui-implementation-plan.md's risk
+    register specified request-scoped memoization of grant lookups (not a
+    cross-request cache — that carries real invalidate-on-revoke risk
+    nothing here currently justifies). Precomputing the caller's full
+    visible-skill-id set once via list_for_grantee(), instead of one
+    list_for_skill() file read per non-public search candidate, is the
+    actual fix — these tests prove the GrantStore call count stays fixed
+    regardless of candidate count, and that results are unchanged."""
+
+    def test_grant_store_is_queried_a_fixed_number_of_times_regardless_of_candidate_count(
+        self, tmp_path, monkeypatch
+    ):
+        entries = [
+            make_entry(
+                id=f"acme.text.private{i}",
+                visibility=Visibility.PRIVATE,
+                owner_tenant="tnt_owner",
+            )
+            for i in range(25)
+        ]
+        index = _index_with(*entries)
+        grants = GrantStore(tmp_path)
+        for entry in entries:
+            grants.create(
+                skill_id=entry.id,
+                grantee_type=GranteeType.USER,
+                grantee_id="usr_grantee",
+                permission=SharePermission.READ,
+                granted_by="usr_owner",
+            )
+        caller = CallerContext(user_id="usr_grantee", tenant_id="tnt_other")
+
+        call_count = 0
+        original_list_for_skill = GrantStore.list_for_skill
+
+        def counting_list_for_skill(self, skill_id):
+            nonlocal call_count
+            call_count += 1
+            return original_list_for_skill(self, skill_id)
+
+        monkeypatch.setattr(GrantStore, "list_for_skill", counting_list_for_skill)
+
+        page = search(index, caller=caller, grants=grants)
+
+        assert page.total == 25
+        # The old per-candidate design would call list_for_skill once per
+        # non-public candidate (25 calls); the fix replaces that with a
+        # fixed, small number of list_for_grantee calls instead.
+        assert call_count == 0
+
+    def test_results_are_identical_to_the_per_skill_lookup_baseline(self, tmp_path):
+        visible = make_entry(
+            id="acme.text.visible", visibility=Visibility.PRIVATE, owner_tenant="tnt_owner"
+        )
+        hidden = make_entry(
+            id="acme.text.hidden", visibility=Visibility.PRIVATE, owner_tenant="tnt_owner"
+        )
+        index = _index_with(visible, hidden)
+        grants = GrantStore(tmp_path)
+        grants.create(
+            skill_id="acme.text.visible",
+            grantee_type=GranteeType.USER,
+            grantee_id="usr_grantee",
+            permission=SharePermission.READ,
+            granted_by="usr_owner",
+        )
+        caller = CallerContext(user_id="usr_grantee", tenant_id="tnt_other")
+
+        page = search(index, caller=caller, grants=grants)
+
+        assert [i.entry.id for i in page.items] == ["acme.text.visible"]

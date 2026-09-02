@@ -168,6 +168,27 @@ shape — don't invent a new one:
 - `can_view(entry, caller=..., grants=...)` is evaluated **per request**,
   never baked into the index — revoking a grant takes effect on the very
   next call, no index rebuild.
+- **Phase 3.2: `index/query.py::search()` does NOT call `can_view()`'s
+  default (`grants.list_for_skill(entry.id)`) path for its filtering
+  loop** — it precomputes `visible_skill_ids_via_grants(caller, grants)`
+  once per request (two `GrantStore.list_for_grantee()` calls, lazily,
+  only if a non-public candidate is actually reached) and threads it
+  through every `can_view()` call via the internal `_visible_skill_ids`
+  param. Every *other* caller of `can_view()` (`get_skill_metadata`,
+  `_require_viewable_entry`, draft fork-from-existing — all single-entry,
+  not a loop) still goes through the original per-skill
+  `grants.list_for_skill()` path unchanged; don't "simplify" those to
+  also compute a full visible-set for a single lookup — that would be
+  strictly more work, not less, for a one-entry check.
+  This deliberately stops short of a real cross-request grant cache:
+  `ui-implementation-plan.md`'s risk register (item 2, cited by
+  `ROADMAP.md`'s "grant-lookup caching... at scale" item) specifies
+  *request-scoped* memoization as its designed mitigation, precisely
+  because a cross-request cache is the only shape that risks "wrongly
+  allow access after a revoked grant" — this doesn't, since nothing it
+  computes outlives the request. If real grant/tenant volume ever
+  justifies going further, the register's own next step is a
+  denormalized "visible to" field on `IndexEntry`, not a bigger cache.
 - `resolve_caller_context(token, settings=...)` is best-effort: a missing,
   expired, or malformed token degrades to `ANONYMOUS`, it never raises.
   Search/metadata endpoints must stay reachable without auth (that's

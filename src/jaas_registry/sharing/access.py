@@ -74,13 +74,52 @@ def resolve_caller_context(
     return CallerContext(user_id=claims.subject, tenant_id=claims.tenant)
 
 
-def can_view(entry: IndexEntry, *, caller: CallerContext, grants: GrantStore | None = None) -> bool:
+def visible_skill_ids_via_grants(caller: CallerContext, grants: GrantStore) -> set[str]:
+    """IMPLEMENTATION_PLAN.md Phase 3.2: the request-scoped mitigation
+    ui-implementation-plan.md's risk register (item 2) specified —
+    "cache per-user visible-tenant-id/grant sets for the request's
+    lifetime" — as opposed to a cross-request cache, which would need
+    real invalidate-on-revoke correctness work nothing here currently
+    justifies (no documented grant-count scale target exists).
+    `index/query.py::search()` calls this once per request (not once per
+    candidate entry) and passes the result to every `can_view()` call in
+    its loop via `_visible_skill_ids`, replacing what would otherwise be
+    one `grants.list_for_skill()` file read per non-public candidate with
+    two fixed-cost `list_for_grantee()` calls regardless of candidate
+    count."""
+    if caller.user_id is None:
+        return set()
+    ids = {
+        grant.skill_id
+        for grant in grants.list_for_grantee(
+            grantee_type=GranteeType.USER, grantee_id=caller.user_id
+        )
+    }
+    if caller.tenant_id is not None:
+        ids |= {
+            grant.skill_id
+            for grant in grants.list_for_grantee(
+                grantee_type=GranteeType.TENANT, grantee_id=caller.tenant_id
+            )
+        }
+    return ids
+
+
+def can_view(
+    entry: IndexEntry,
+    *,
+    caller: CallerContext,
+    grants: GrantStore | None = None,
+    _visible_skill_ids: set[str] | None = None,
+) -> bool:
     if entry.visibility == Visibility.PUBLIC:
         return True
     if not caller.is_authenticated:
         return False
     if caller.tenant_id is not None and entry.owner_tenant == caller.tenant_id:
         return True
+    if _visible_skill_ids is not None:
+        return entry.id in _visible_skill_ids
     if grants is None:
         return False
     for grant in grants.list_for_skill(entry.id):
