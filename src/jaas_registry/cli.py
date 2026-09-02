@@ -90,6 +90,51 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     validate_rule_parser.add_argument("file", help="Path to a rule YAML file")
 
+    search_parser = subparsers.add_parser(
+        "search", help="Search the registry for skills (GET /api/v1/skills)"
+    )
+    search_parser.add_argument("--query", default=None)
+    search_parser.add_argument("--tags", default=None, help="Comma-separated tag list")
+    search_parser.add_argument("--category", default=None)
+    search_parser.add_argument("--runtime", default=None)
+    search_parser.add_argument("--page", type=int, default=1)
+    search_parser.add_argument("--page-size", type=int, default=20)
+    search_parser.add_argument(
+        "--api-url", default="http://127.0.0.1:8027", help="Base URL of the registry API"
+    )
+    search_parser.add_argument(
+        "--token",
+        default=None,
+        help="Personal access token — optional, widens results to private/shared skills",
+    )
+
+    pull_parser = subparsers.add_parser(
+        "pull", help="Download a published skill's packaged files to a local directory"
+    )
+    pull_parser.add_argument("skill_id")
+    pull_parser.add_argument("--version", default="latest")
+    pull_parser.add_argument(
+        "--dest", default=None, help="Directory to extract into (default: ./<skill_id>/)"
+    )
+    pull_parser.add_argument(
+        "--api-url", default="http://127.0.0.1:8027", help="Base URL of the registry API"
+    )
+    pull_parser.add_argument(
+        "--token", default=None, help="Personal access token (artifact download requires auth)"
+    )
+
+    install_parser = subparsers.add_parser(
+        "install", help="Install a published skill into .claude/skills/<skill_id>/"
+    )
+    install_parser.add_argument("skill_id")
+    install_parser.add_argument("--version", default="latest")
+    install_parser.add_argument(
+        "--api-url", default="http://127.0.0.1:8027", help="Base URL of the registry API"
+    )
+    install_parser.add_argument(
+        "--token", default=None, help="Personal access token (artifact download requires auth)"
+    )
+
     return parser
 
 
@@ -359,6 +404,156 @@ def cmd_release(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_api_error(label: str, resp) -> None:
+    try:
+        error = resp.json()
+        print(
+            f"{label} FAILED [{error.get('code', 'HTTP_' + str(resp.status_code))}]: "
+            f"{error.get('message', resp.text)}"
+        )
+    except ValueError:
+        print(f"{label} FAILED [HTTP {resp.status_code}]: {resp.text}")
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """End-user package-manager-style command — real HTTP against a running
+    registry (unlike cmd_publish, which never leaves the local filesystem).
+    Anonymous by default: GET /api/v1/skills is auth-optional, scoped to
+    PUBLIC results without a token (see api/routes.py's search_skills)."""
+    import httpx
+
+    api_url = args.api_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {args.token}"} if args.token else {}
+    params: dict[str, str | int] = {"page": args.page, "pageSize": args.page_size}
+    if args.query:
+        params["query"] = args.query
+    if args.tags:
+        params["tags"] = args.tags
+    if args.category:
+        params["category"] = args.category
+    if args.runtime:
+        params["runtime"] = args.runtime
+
+    try:
+        resp = httpx.get(f"{api_url}/api/v1/skills", params=params, headers=headers, timeout=30.0)
+    except httpx.HTTPError as exc:
+        print(f"SEARCH FAILED: could not reach {api_url}: {exc}")
+        return 1
+
+    if resp.status_code >= 400:
+        _print_api_error("SEARCH", resp)
+        return 1
+
+    result = resp.json()
+    items = result["items"]
+    if not items:
+        print("No skills found.")
+        return 0
+    for item in items:
+        tags = ",".join(item["tags"])
+        print(
+            f"{item['id']}@{item['version']}  [{item['visibility']}/{item['status']}]  "
+            f"{item['category']}  tags={tags}"
+        )
+    print(f"-- {result['page']['total']} total --")
+    return 0
+
+
+def _download_skill_files(
+    *, api_url: str, skill_id: str, version: str, token: str
+) -> dict[str, bytes] | None:
+    """Shared by cmd_pull and cmd_install: issue a short-lived artifact
+    token (POST .../artifact-token) then redeem it for the packaged tar
+    (GET /artifacts/{token}), extracting it exactly like drafts/store.py
+    and api/routes.py's file-viewer endpoints already do. Unlike search or
+    the per-file JSON endpoints, artifact-token issuance requires a bearer
+    token unconditionally (authz/policy.py's JwtAuthorizer is deny-by-
+    default with no anonymous path) — deliberately not loosened here, so a
+    caller always needs --token. Downloading the signed tar directly (vs.
+    looping the per-file endpoint) also keeps this binary-safe: the
+    per-file JSON endpoint UTF-8-decodes each file with errors="replace",
+    which would corrupt any non-text asset in the package."""
+    import httpx
+
+    from jaas_registry.artifact.packaging import extract_archive
+
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        token_resp = httpx.post(
+            f"{api_url}/api/v1/skills/{skill_id}/versions/{version}/artifact-token",
+            headers=headers,
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        print(f"PULL FAILED: could not reach {api_url}: {exc}")
+        return None
+    if token_resp.status_code >= 400:
+        _print_api_error("PULL", token_resp)
+        return None
+    artifact_token = token_resp.json()["token"]
+
+    try:
+        archive_resp = httpx.get(f"{api_url}/api/v1/artifacts/{artifact_token}", timeout=30.0)
+    except httpx.HTTPError as exc:
+        print(f"PULL FAILED: could not reach {api_url}: {exc}")
+        return None
+    if archive_resp.status_code >= 400:
+        _print_api_error("PULL", archive_resp)
+        return None
+    return extract_archive(archive_resp.content)
+
+
+def _write_files(files: dict[str, bytes], dest: Path) -> None:
+    for name, content in files.items():
+        path = dest / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    if not args.token:
+        print("PULL FAILED: --token is required (artifact download requires authentication)")
+        return 1
+
+    api_url = args.api_url.rstrip("/")
+    files = _download_skill_files(
+        api_url=api_url, skill_id=args.skill_id, version=args.version, token=args.token
+    )
+    if files is None:
+        return 1
+
+    dest = Path(args.dest) if args.dest else Path(args.skill_id)
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_files(files, dest)
+    print(f"PULLED: {args.skill_id}@{args.version} -> {dest}/ ({len(files)} files)")
+    return 0
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Extracts into .claude/skills/<skill_id>/ relative to cwd — the
+    directory convention this repo's own dev tooling (and Claude Code
+    generally) already uses. IMPLEMENTATION_PLAN.md Phase 2.2: no other
+    agent-skill-directory convention exists anywhere in this codebase, so
+    this is the only one implemented; a --dest-style override for other
+    agents' conventions is a natural follow-up once one is needed."""
+    if not args.token:
+        print("INSTALL FAILED: --token is required (artifact download requires authentication)")
+        return 1
+
+    api_url = args.api_url.rstrip("/")
+    files = _download_skill_files(
+        api_url=api_url, skill_id=args.skill_id, version=args.version, token=args.token
+    )
+    if files is None:
+        return 1
+
+    dest = Path(".claude") / "skills" / args.skill_id
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_files(files, dest)
+    print(f"INSTALLED: {args.skill_id}@{args.version} -> {dest}/ ({len(files)} files)")
+    return 0
+
+
 def cmd_guardrails_push(args: argparse.Namespace) -> int:
     """Syncs local *.yaml/*.yml rule files to a tenant's custom guardrail
     rule library, one PUT per file — the git-native alternative to
@@ -495,6 +690,12 @@ def main(
         return cmd_serve(args)
     if args.command == "release":
         return cmd_release(args)
+    if args.command == "search":
+        return cmd_search(args)
+    if args.command == "pull":
+        return cmd_pull(args)
+    if args.command == "install":
+        return cmd_install(args)
     if args.command == "guardrails":
         if args.guardrails_command == "push":
             return cmd_guardrails_push(args)

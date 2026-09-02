@@ -402,13 +402,14 @@ from 1.1 to validate itself).
 
 ## Phase 2 — Interoperate with the standard (1–3 months)
 
-**Status (2026-09-02):** 2.3 and 2.4 done (2.3 landed ahead of sequence
-during Phase 1; 2.4 done this session, with a corrected design — see its
-section below). 2.1 (SKILL.md/agentskills.io import-export) and 2.2
-(`jaasctl search/pull/install`) remain not yet started; per this
-document's own process, each gets its own Explore→Plan pass before
-implementation begins, since — unlike Phase 1 — they were only scoped
-from the roadmap audit, not verified line-by-line against the code yet.
+**Status (2026-09-02):** 2.2, 2.3, and 2.4 done (2.3 landed ahead of
+sequence during Phase 1; 2.2 and 2.4 done this session, both with an
+Explore pass surfacing real judgment calls the roadmap's one-line
+descriptions undersold — see their sections below). Only 2.1
+(SKILL.md/agentskills.io import-export) remains not started; per this
+document's own process it gets its own Explore→Plan pass before
+implementation begins, since — unlike Phase 1 — it was only scoped from
+the roadmap audit, not verified line-by-line against the code yet.
 
 ### 2.1 — SKILL.md / agentskills.io import & export · `jaas-registry` + `jaas-ui`
 
@@ -438,22 +439,66 @@ workspace (`src/components/drafts/`) for "export as SKILL.md" /
 "import from SKILL.md." Needs its own Explore pass on the manifest model
 (`artifact/manifest.py` or equivalent) before a real plan.
 
-### 2.2 — `jaasctl search / pull / install` · `jaas-registry` CLI
+### 2.2 — `jaasctl search / pull / install` · `jaas-registry` CLI — ✅ DONE (2026-09-02)
 
-**What we're building:** New CLI subcommands so `jaasctl` behaves like a
-package manager (search the registry, pull a skill's files, install it
-into a local agent's skill directory), not just publish/validate.
+**What we built:** Three new CLI subcommands — `jaasctl search`,
+`jaasctl pull <skill_id>`, `jaasctl install <skill_id>` — the first
+`jaasctl` commands built for an end user browsing/consuming the registry,
+rather than CI (`release`) or an author (`publish`/`validate`).
+`search` hits `GET /api/v1/skills` (auth-optional, same as the web UI's
+search). `pull`/`install` share a `_download_skill_files()` helper: issue
+a short-lived artifact token (`POST .../artifact-token`), redeem it for
+the signed tar (`GET /artifacts/{token}`), and extract it with the
+existing `artifact/packaging.py::extract_archive()` — the same function
+`drafts/store.py` and the file-viewer API already use. `pull` extracts to
+`--dest` (default `./<skill_id>/`); `install` extracts to
+`.claude/skills/<skill_id>/` relative to cwd.
 
-**Breaking-change risk:** Very low — additive CLI subcommands against
-existing read APIs (search, metadata, artifact download all already
-exist per the roadmap audit). No server-side changes expected.
+**Design decisions surfaced by an Explore pass before coding (the roadmap's
+one-line description undersold two real judgment calls):**
+- **Install target directory** — no convention for this existed anywhere
+  in the codebase. Resolved with the user: `.claude/skills/<skill_id>/`
+  (Claude Code's own convention, matching this repo's own dev tooling) —
+  chosen over a bare `--dest`-only design or deferring `install` entirely.
+- **Pull's download path had to be the signed tar, not the per-file JSON
+  endpoint** — `GET .../files/{file_path}` UTF-8-decodes each file with
+  `errors="replace"` (`api/schemas.py`'s `FileContentResponse`), which
+  would silently corrupt any binary asset in a package. The tar endpoint
+  (`GET /artifacts/{token}`) is binary-safe and was already the right tool.
+- **Considered and explicitly rejected**: loosening `create_artifact_token`
+  to allow anonymous issuance for PUBLIC-visibility skills, so `pull`
+  could work without `--token`. `authz/policy.py`'s `JwtAuthorizer` is
+  documented as deny-by-default with "no implicit-allow branch" —
+  artifact-token issuance is a distinct, stricter security boundary from
+  the visibility-based anonymous access `search`/`/files` already have
+  (which gate on `can_view`, not `authorizer.check`). Changing that
+  boundary is a deliberate security-model decision, not something to
+  slip in as a side effect of a CLI feature — `pull`/`install` require
+  `--token` unconditionally instead, matching `release`'s existing
+  `--token` precedent.
 
-**What it improves:** Every current framework integration is hand-rolled
-REST calls; this gives a real command-line consumption path.
+**Does it break anything?** No — three new, independent subcommands and
+one new module-level constant list; no existing subcommand, route, or
+schema changed. `--token` is optional for `search` (widens results,
+matching the API's own optional-auth behavior) and required (with a
+friendly error, not an argparse crash) for `pull`/`install`.
 
-**Impacted areas (preliminary):** `cli.py` only, client-side. Needs
-confirmation that the artifact-download API already returns everything
-`pull`/`install` need (likely yes, not yet verified).
+**What it improves:** Every current framework integration was hand-rolled
+REST calls against `GET /api/v1/skills`/`/artifacts/{token}`; this gives a
+real command-line consumption path, and `install` specifically makes a
+published skill usable by Claude Code with one command.
+
+**Impacted areas (actual):** `src/jaas_registry/cli.py` only (new
+subparsers, `cmd_search`/`cmd_pull`/`cmd_install`/`_download_skill_files`/
+`_print_api_error`/`_write_files`, new `main()` dispatch branches) — no
+server-side code touched. New test file
+`tests/integration/test_cli_search_pull_install.py` (8 tests: 7 with
+monkeypatched `httpx`, following `test_cli_release.py`'s established
+pattern, plus one true end-to-end test that routes `httpx.get`/`post`
+through a real `TestClient(create_app(...))` to confirm the hand-typed
+fake response shapes in the other 7 actually match the real
+routes/schemas). 722 → 730 backend tests passing; ruff clean; no new
+mypy errors.
 
 ### 2.3 — Object storage backend (S3/MinIO) · `jaas-registry` — ✅ DONE (2026-09-02)
 

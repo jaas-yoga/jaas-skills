@@ -299,15 +299,61 @@ shape — don't invent a new one:
   the fallback auth path everywhere else in this file. Don't try to
   derive "which branch is this tag on" any other way.
 - CLI side: `jaasctl release` (`cli.py::cmd_release`) is a pure HTTP
-  client of this endpoint — it's the *only* `jaasctl` command that talks
-  to a remote backend over HTTP rather than writing local storage
-  directly, since a CI runner has no business having filesystem access to
-  `storage_root`/the signing key. `jaasctl guardrails push` similarly
-  calls the custom-guardrails CRUD API; `jaasctl guardrails validate`
-  talks straight to the guardrails service's `/validate-rule` (no
-  tenant/auth needed, mirrors how `cmd_validate` reaches that service).
-  See `examples/ci/github-actions-release.yml` for the reference workflow
-  these commands are meant to run inside.
+  client of this endpoint, since a CI runner has no business having
+  filesystem access to `storage_root`/the signing key. `jaasctl
+  guardrails push` similarly calls the custom-guardrails CRUD API;
+  `jaasctl guardrails validate` talks straight to the guardrails
+  service's `/validate-rule` (no tenant/auth needed, mirrors how
+  `cmd_validate` reaches that service). See
+  `examples/ci/github-actions-release.yml` for the reference workflow
+  these commands are meant to run inside. (`search`/`pull`/`install` are
+  also real HTTP clients now — see the section below.)
+
+## `jaasctl search / pull / install` (Phase 2.2, `cli.py`)
+
+The first `jaasctl` commands built for an end user consuming the registry
+(not CI, not an author) — a package-manager-style layer on top of existing
+read APIs. No server-side code was touched to add these; `cli.py` only.
+
+- `search` → `GET /api/v1/skills`, auth-optional (`--token` widens results
+  to private/shared skills, same as the web UI's search — see "Visibility
+  & sharing" above). Prints a flat line per result; no pagination UX
+  beyond `--page`/`--page-size` yet.
+- `pull`/`install` share `_download_skill_files()`: `POST
+  .../artifact-token` then `GET /artifacts/{token}`, extracted via the
+  existing `artifact/packaging.py::extract_archive()`. **Deliberately not**
+  built on the per-file `GET .../files/{file_path}` endpoint — that one
+  UTF-8-decodes with `errors="replace"` (`FileContentResponse`), so it
+  would silently corrupt a binary asset; the signed tar is the only
+  binary-safe read path for a whole package today.
+- **`--token` is required for `pull`/`install`, unconditionally — even for
+  a PUBLIC skill.** `create_artifact_token` calls
+  `authorizer.check(token=..., ...)`, and the real `JwtAuthorizer`
+  (`authz/policy.py`) is deny-by-default with no anonymous branch at all
+  (`if not token: raise UNAUTHORIZED`), regardless of the entry's
+  visibility. This is a *different* security boundary than
+  `search`/`/files`, which gate on `can_view`/visibility, not
+  `authorizer.check`. Loosening artifact-token issuance to allow anonymous
+  PUBLIC access was considered and explicitly rejected while building this
+  — it would be a deliberate security-model change (this file's own
+  `authz/policy.py` docstring calls out "no implicit-allow branch" as a
+  load-bearing property), not something to fold into a CLI convenience
+  feature. If anonymous `pull` of public skills is ever wanted, that's a
+  standalone decision for `create_artifact_token`, not an implicit side
+  effect of the CLI.
+- `install` extracts to `.claude/skills/<skill_id>/` relative to cwd —
+  Claude Code's own convention, and the only agent-skill-directory
+  convention this codebase knows about (confirmed via search before
+  building this: nothing else in `src/` references any such layout).
+  There's no lockfile/update tracking on repeat installs — re-running
+  `install` just overwrites the directory's contents.
+- Test pattern: `tests/integration/test_cli_search_pull_install.py`
+  follows `test_cli_release.py`'s established convention — `main([...])`
+  in-process, `monkeypatch.setattr("httpx.get"/"httpx.post", ...)`, no
+  real server. One extra test in that file routes the same monkeypatched
+  `httpx.get`/`post` through a real `TestClient(create_app(...))` instead
+  of a hand-typed fake payload — worth doing whenever a CLI test's fake
+  response shape is itself an assumption being tested, not just plumbing.
 
 ## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
 
