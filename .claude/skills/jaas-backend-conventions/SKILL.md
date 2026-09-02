@@ -355,6 +355,61 @@ read APIs. No server-side code was touched to add these; `cli.py` only.
   of a hand-typed fake payload — worth doing whenever a CLI test's fake
   response shape is itself an assumption being tested, not just plumbing.
 
+## `jaasctl export / import` — SKILL.md interop (Phase 2.1, `artifact/skillmd.py` + `cli.py`)
+
+Bidirectional converter between this registry's `manifest.yaml` and the
+open `agentskills.io` `SKILL.md` format (YAML frontmatter + markdown
+body). Deliberately v1/lossy in both directions, by explicit product
+decision — don't try to "complete" this without re-reading
+`IMPLEMENTATION_PLAN.md`'s Phase 2.1 section first, the gaps are on
+purpose:
+
+- **Only a single SKILL.md file round-trips.** A real SKILL.md skill
+  often ships `scripts/`/`references/`/`assets/`; this registry's
+  packaging (`artifact/packaging.py::collect_package_files`) only ever
+  bundles exactly 4 known docs + 1 entrypoint file — no arbitrary extra
+  files. `jaasctl import` doesn't know how to bring those along. Adding
+  that is a separate, larger change to `collect_package_files`/
+  `load_source_documents`, not something to bolt onto `skillmd.py` alone.
+- **`slugify_skill_id()`** (dots → hyphens) is the only id transform
+  used — this registry's `id` is a dotted 3+-segment namespaced identity
+  (`validation/models.py`'s `ID_PATTERN`), SKILL.md's `name` is a bare
+  slug with no namespace at all. Going the other way (SKILL.md → this
+  registry) never reverses this automatically: `jaasctl import` requires
+  `--id` explicitly, since a bare `name` can't safely imply a
+  globally-unique registry id (risk of silently colliding with an
+  unrelated published skill).
+- **`--runtime`/`--owner-team`/`--category`/`--version` are also
+  required, non-optional flags on import** — SKILL.md has none of these
+  concepts. Don't be tempted to parse them out of the free-text
+  `compatibility` frontmatter field; that field is synthesized *from*
+  `runtime` on export, one-way only, and isn't a safe structured-data
+  source coming back in.
+- **Entrypoint ↔ SKILL.md body bridge**: on export, if
+  `manifest.entrypoint` is a text/markdown file (`.md`/`.markdown`/
+  `.txt`), its content becomes the SKILL.md body verbatim; a non-text
+  entrypoint (e.g. `executor.py`) has no home in a single SKILL.md file
+  in this v1 scope, so export still succeeds but with a synthesized
+  description-only body and a printed note — never silently drops it
+  without saying so. On import, the SKILL.md body always becomes the new
+  package's own `entrypoint: SKILL.md` file, verbatim — matches
+  `artifact/publish.py::load_source_documents`'s own comment already
+  naming `SKILL.md` as a valid entrypoint filename.
+- **Round-trippable fields live under `metadata.jaas-*` string keys**
+  (`jaas-id`, `jaas-version`, `jaas-category`, `jaas-owner-team`,
+  `jaas-tags`) — SKILL.md's own documented escape hatch for
+  non-standard data (a map[string]string). This is what lets
+  `jaasctl import` recover a previously-exported skill's identity
+  without the caller having to retype it (see
+  `test_export_then_import_preserves_identity_via_metadata` in
+  `tests/unit/test_artifact_skillmd.py`) — but it's a convenience, not a
+  guarantee: any externally-authored SKILL.md won't have these keys at
+  all, which is the normal case, not an error.
+- `export` is a pure HTTP client of a running registry (reuses Phase
+  2.2's `_download_skill_files()`), same `--token`-required posture as
+  `pull`/`install` — not loosened here either. `import` is purely local/
+  offline, closer to `validate` — no `--api-url`/`--token` at all.
+
 ## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
 
 - **Two signature kinds coexist permanently, not just during a

@@ -135,6 +135,44 @@ def _build_parser() -> argparse.ArgumentParser:
         "--token", default=None, help="Personal access token (artifact download requires auth)"
     )
 
+    export_parser = subparsers.add_parser(
+        "export", help="Export a published skill as a SKILL.md file (agentskills.io format)"
+    )
+    export_parser.add_argument("skill_id")
+    export_parser.add_argument("--version", default="latest")
+    export_parser.add_argument(
+        "--out", default=None, help="Output directory (default: ./<slug>/)"
+    )
+    export_parser.add_argument(
+        "--api-url", default="http://127.0.0.1:8027", help="Base URL of the registry API"
+    )
+    export_parser.add_argument(
+        "--token", default=None, help="Personal access token (artifact download requires auth)"
+    )
+
+    import_parser = subparsers.add_parser(
+        "import", help="Convert a SKILL.md file into a jaas-registry source package directory"
+    )
+    import_parser.add_argument(
+        "path", help="Path to a SKILL.md file, or a directory containing one"
+    )
+    import_parser.add_argument(
+        "--id", required=True, help="Canonical registry id, e.g. acme.text.summarizer"
+    )
+    import_parser.add_argument("--version", required=True, help="SemVer version, e.g. 1.0.0")
+    import_parser.add_argument("--owner-team", required=True)
+    import_parser.add_argument("--category", required=True)
+    import_parser.add_argument(
+        "--runtime",
+        action="append",
+        metavar="FAMILY:VERSION_RANGE",
+        help="Repeatable; at least one required, e.g. --runtime python:>=3.10.0,<4.0.0 "
+        "(SKILL.md has no runtime-compatibility concept, so this can't be inferred)",
+    )
+    import_parser.add_argument(
+        "--out", default=None, help="Output directory (default: ./<id>/)"
+    )
+
     return parser
 
 
@@ -554,6 +592,96 @@ def cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Phase 2.1: converts an already-published skill into a SKILL.md file
+    (agentskills.io format), so it's usable by any tool reading that open
+    standard directly. Reuses _download_skill_files (Phase 2.2) — export
+    is a pure client of a running registry, not a local-directory operation,
+    since the fully-published manifest (with a real, resolved entrypoint
+    file) is what's being converted."""
+    import yaml
+
+    from jaas_registry.artifact.skillmd import manifest_to_skillmd, slugify_skill_id
+    from jaas_registry.validation.rules import validate_manifest
+
+    if not args.token:
+        print("EXPORT FAILED: --token is required (artifact download requires authentication)")
+        return 1
+
+    api_url = args.api_url.rstrip("/")
+    files = _download_skill_files(
+        api_url=api_url, skill_id=args.skill_id, version=args.version, token=args.token
+    )
+    if files is None:
+        return 1
+    if "manifest.yaml" not in files:
+        print("EXPORT FAILED: downloaded artifact has no manifest.yaml")
+        return 1
+
+    manifest = validate_manifest(yaml.safe_load(files["manifest.yaml"]))
+    entrypoint_content = files.get(manifest.entrypoint)
+    if entrypoint_content is None:
+        print(
+            f"note: entrypoint '{manifest.entrypoint}' was not part of the published "
+            f"package; exported SKILL.md body is a summary only"
+        )
+    skillmd_bytes = manifest_to_skillmd(manifest, entrypoint_content=entrypoint_content)
+
+    dest = Path(args.out) if args.out else Path(slugify_skill_id(manifest.id))
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "SKILL.md").write_bytes(skillmd_bytes)
+    print(f"EXPORTED: {manifest.id}@{manifest.version} -> {dest / 'SKILL.md'}")
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Phase 2.1: converts a SKILL.md file into this registry's own
+    manifest.yaml + co. source package layout, ready for the existing
+    `jaasctl validate`/`jaasctl publish` pipeline unchanged. Only
+    materializes files — it deliberately does not auto-validate or
+    auto-publish, matching `pull`'s "just fetch the files" scope."""
+    from jaas_registry.artifact.skillmd import SkillMdFormatError, skillmd_to_source_documents
+
+    path = Path(args.path)
+    skillmd_path = path / "SKILL.md" if path.is_dir() else path
+    if not skillmd_path.is_file():
+        print(f"IMPORT FAILED: no SKILL.md found at {skillmd_path}")
+        return 1
+
+    runtime_pairs: list[tuple[str, str]] = []
+    for entry in args.runtime or []:
+        family, sep, version_range = entry.partition(":")
+        if not sep:
+            print(f"IMPORT FAILED: --runtime must be FAMILY:VERSION_RANGE, got {entry!r}")
+            return 1
+        runtime_pairs.append((family, version_range))
+    if not runtime_pairs:
+        print(
+            "IMPORT FAILED: at least one --runtime FAMILY:VERSION_RANGE is required "
+            "(SKILL.md has no runtime-compatibility concept, so this can't be inferred)"
+        )
+        return 1
+
+    try:
+        files = skillmd_to_source_documents(
+            skillmd_path.read_bytes(),
+            id=args.id,
+            version=args.version,
+            owner_team=args.owner_team,
+            category=args.category,
+            runtime=runtime_pairs,
+        )
+    except SkillMdFormatError as exc:
+        print(f"IMPORT FAILED: {exc}")
+        return 1
+
+    dest = Path(args.out) if args.out else Path(args.id)
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_files(files, dest)
+    print(f"IMPORTED: {args.id}@{args.version} -> {dest}/ (run `jaasctl validate {dest}` next)")
+    return 0
+
+
 def cmd_guardrails_push(args: argparse.Namespace) -> int:
     """Syncs local *.yaml/*.yml rule files to a tenant's custom guardrail
     rule library, one PUT per file — the git-native alternative to
@@ -696,6 +824,10 @@ def main(
         return cmd_pull(args)
     if args.command == "install":
         return cmd_install(args)
+    if args.command == "export":
+        return cmd_export(args)
+    if args.command == "import":
+        return cmd_import(args)
     if args.command == "guardrails":
         if args.guardrails_command == "push":
             return cmd_guardrails_push(args)

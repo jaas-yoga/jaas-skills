@@ -400,44 +400,104 @@ from 1.1 to validate itself).
 
 ---
 
-## Phase 2 — Interoperate with the standard (1–3 months)
+## Phase 2 — Interoperate with the standard (1–3 months) — ✅ ALL FOUR ITEMS DONE (2026-09-02)
 
-**Status (2026-09-02):** 2.2, 2.3, and 2.4 done (2.3 landed ahead of
-sequence during Phase 1; 2.2 and 2.4 done this session, both with an
-Explore pass surfacing real judgment calls the roadmap's one-line
-descriptions undersold — see their sections below). Only 2.1
-(SKILL.md/agentskills.io import-export) remains not started; per this
-document's own process it gets its own Explore→Plan pass before
-implementation begins, since — unlike Phase 1 — it was only scoped from
-the roadmap audit, not verified line-by-line against the code yet.
+**Status (2026-09-02):** All four items done. 2.3 landed ahead of
+sequence during Phase 1; 2.2, 2.4, and 2.1 all done this session, each
+with an Explore pass surfacing real judgment calls the roadmap's one-line
+descriptions undersold — see their sections below. **Phase 2 is complete.**
 
-### 2.1 — SKILL.md / agentskills.io import & export · `jaas-registry` + `jaas-ui`
+### 2.1 — SKILL.md / agentskills.io import & export · `jaas-registry` — ✅ DONE (2026-09-02)
 
-**What we're building:** A bidirectional mapping between this registry's
-internal manifest format and the open `agentskills.io` `SKILL.md` +
-frontmatter format, so skills published here can be pulled by any of the
-~40 tools reading that standard (Claude Code, Cursor, Copilot, etc.), and
-external `SKILL.md` packages can be imported as drafts here.
+**What we built:** `jaasctl export <skill_id>` and `jaasctl import <path>`
+— a bidirectional converter between this registry's manifest.yaml and the
+open `agentskills.io` `SKILL.md` format (YAML frontmatter + markdown
+body), scoped to backend + CLI only this pass (the `jaas-ui` "export as
+SKILL.md"/"import from SKILL.md" buttons are a deliberate follow-up, not
+built here — same deferral pattern as Phase 1.3's yank-status UI banner).
+`export` reuses Phase 2.2's `_download_skill_files()` to fetch an
+already-published skill's real manifest + entrypoint content, then
+`artifact/skillmd.py::manifest_to_skillmd()` converts it. `import` is the
+reverse and purely local/offline (no server involved) —
+`skillmd_to_source_documents()` materializes a normal
+`manifest.yaml`+`schema.json`+`permissions.yaml`+`dependencies.yaml`
+directory, unchanged input to the existing `jaasctl validate`/`jaasctl
+publish` pipeline (proven by an end-to-end test that runs a real imported
+package through `jaasctl validate`).
 
-**Breaking-change risk:** Low if scoped as pure import/export converters —
-the internal manifest model and storage format are not proposed to change,
-only a new translation layer sitting alongside them. Real risk area: if
-the internal manifest has fields with no `SKILL.md` equivalent (or vice
-versa), export is lossy — needs an explicit decision (documented, not
-silently dropped) on what's preserved vs. what only round-trips within
-this registry.
+**Design decisions surfaced by researching the actual external spec
+(agentskills.io) against the actual internal manifest model — the
+roadmap's one-liner undersold how different these two formats are — all
+three were confirmed with the user before coding:**
+- **v1 scope is single-file skills only.** A real SKILL.md skill often
+  ships a `scripts/`/`references/`/`assets/` folder alongside SKILL.md;
+  this registry's packaging (`artifact/packaging.py::collect_package_files`)
+  only ever bundles exactly 4 known documents + 1 entrypoint file, no
+  arbitrary extra files. Extending that to arbitrary bundles was
+  explicitly scoped out as separate, larger follow-up work, not silently
+  attempted.
+- **`jaasctl import` requires explicit `--id`/`--version`/`--owner-team`/
+  `--category`/`--runtime` flags — never inferred.** SKILL.md's `name`
+  field has no namespace (a bare slug, locally unique at best); this
+  registry requires a globally-unique 3+-segment dotted `id`
+  (`validation/models.py`'s `ID_PATTERN`). Guessing one from a bare
+  `name` risks silently colliding with an unrelated published skill —
+  rejected in favor of requiring the author to state it explicitly, same
+  reasoning as Phase 1.2's Sigstore identity decision.
+- **No jaas-ui surface in this pass** — see "What we built" above.
 
-**What it improves:** Highest-leverage item on the roadmap — turns every
-published skill from "usable in this registry only" into portable across
-the open standard's whole tool ecosystem, with no extra authoring work.
+**Where the two formats structurally diverge (why this is lossy in both
+directions, on purpose, not by oversight):**
+- SKILL.md has **no** id/version/owner/category/runtime-compatibility/
+  permissions/dependencies/digest/signature/visibility concept at all —
+  every `IndexEntry` field beyond `name`/`description` has no frontmatter
+  equivalent. Export stashes the round-trippable ones (`id`, `version`,
+  `category`, `owner.team`, `tags`) under `metadata.jaas-*` string keys
+  (SKILL.md's own documented escape hatch for non-standard data) so a
+  later re-import can recover them instead of losing them outright —
+  proven by a round-trip test. `runtime` becomes a free-text
+  `compatibility` field on export (capped at the spec's own 500-char
+  limit) but is **not** parsed back out of it on import — free-text
+  compatibility strings aren't a safe structured-data source, so
+  `--runtime` must be supplied fresh on import instead.
+- This registry has **no** freeform-instructions field distinct from
+  `description` — SKILL.md's markdown body *is* the actual skill logic.
+  The closest bridge: if `manifest.entrypoint` is already a text/markdown
+  file (`.md`/`.markdown`/`.txt` — `publish.py`'s own
+  `load_source_documents` comment already names `prompt.md`/`SKILL.md` as
+  valid entrypoints), its content becomes the SKILL.md body verbatim on
+  export, and on import the SKILL.md body is written back as the
+  package's own `entrypoint: SKILL.md` file, unchanged. A non-text
+  entrypoint (e.g. `executor.py`) has no home in a single SKILL.md file
+  in this v1 scope — export still succeeds, but with a synthesized
+  description-only body and a printed note that the real program wasn't
+  included, never silently.
+- `allowed-tools` (SKILL.md, experimental — pre-approved agent tool
+  names) and `permissions.yaml` (this registry — declared capability
+  scopes like `network:egress`) look similar but aren't the same concept;
+  no attempt is made to translate between them in either direction.
 
-**Impacted areas (preliminary):** new serialization module in
-`src/jaas_registry` (likely `artifact/skillmd.py` or similar — not yet
-verified against actual manifest model internals), a new API
-endpoint/CLI path for import, and a jaas-ui UI surface in the draft
-workspace (`src/components/drafts/`) for "export as SKILL.md" /
-"import from SKILL.md." Needs its own Explore pass on the manifest model
-(`artifact/manifest.py` or equivalent) before a real plan.
+**Does it break anything?** No — two new, independent CLI subcommands; no
+existing route, schema, or storage format changed. `export` requires
+`--token` unconditionally, same reasoning as `pull`/`install` (Phase
+2.2's artifact-token auth boundary, not loosened here either).
+
+**What it improves:** Turns a published skill from "usable in this
+registry only" into a real `SKILL.md` file any of the ~40 tools reading
+that open standard can consume directly, and lets an externally-authored
+`SKILL.md` skill become a real, valid, publishable registry package with
+one command plus five required flags.
+
+**Impacted areas (actual):** new `src/jaas_registry/artifact/skillmd.py`
+(`manifest_to_skillmd`, `parse_skillmd`, `skillmd_to_source_documents`,
+`slugify_skill_id`, `SkillMdFormatError`, `ParsedSkillMd`); `cli.py` (new
+`export`/`import` subparsers, `cmd_export`/`cmd_import`, reusing Phase
+2.2's `_download_skill_files`/`_write_files` helpers) — no server-side
+route/schema changes. New tests: `tests/unit/test_artifact_skillmd.py`
+(20 tests — export/parse/import + a round-trip test), `tests/integration/
+test_cli_export_import.py` (8 tests, including one that runs a real
+imported package through `jaasctl validate` end-to-end). 730 → 758
+backend tests passing; ruff clean; no new mypy errors.
 
 ### 2.2 — `jaasctl search / pull / install` · `jaas-registry` CLI — ✅ DONE (2026-09-02)
 
