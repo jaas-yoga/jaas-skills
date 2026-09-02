@@ -30,6 +30,7 @@ from jaas_registry.api.schemas import (
     GovernanceUpdateRequest,
     OwnerResponse,
     PageMeta,
+    ReceivedShareResponse,
     ResolvedDependency,
     RuntimeCompatibilityResponse,
     SearchResponse,
@@ -521,6 +522,57 @@ def _grant_to_response(grant: ShareGrant) -> ShareGrantResponse:
         grantedBy=grant.granted_by,
         grantedAt=grant.granted_at,
     )
+
+
+@router.get("/shares/received", response_model=list[ReceivedShareResponse])
+def list_received_shares(
+    index: IndexDep,
+    settings: SettingsDep,
+    grants: GrantStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> list[ReceivedShareResponse]:
+    """IMPLEMENTATION_PLAN.md Phase 3.4 ("shared with me"): exposes
+    sharing/grants.py's GrantStore.list_for_grantee(), built for exactly
+    this case but never wired to a route before now. Matches grants made
+    directly to the caller's user id *and* grants made to the caller's
+    tenant — a caller with no resolvable identity (no/invalid token) is
+    rejected outright, since "shared with me" is meaningless for an
+    anonymous caller, unlike search/metadata's auth-optional posture."""
+    caller = resolve_caller_context(
+        credentials.credentials if credentials else None, settings=settings
+    )
+    if caller.user_id is None:
+        raise JaasError(ErrorCode.UNAUTHORIZED, "sign-in required to view received shares")
+
+    matches = list(
+        grants.list_for_grantee(grantee_type=GranteeType.USER, grantee_id=caller.user_id)
+    )
+    if caller.tenant_id:
+        matches += grants.list_for_grantee(
+            grantee_type=GranteeType.TENANT, grantee_id=caller.tenant_id
+        )
+
+    results = []
+    for grant in matches:
+        entry = index.get_resolved(grant.skill_id, None)
+        if entry is None:
+            # No resolvable version left (e.g. every version yanked) —
+            # skip rather than error; the grant still exists, it just
+            # can't be rendered usefully right now.
+            continue
+        results.append(
+            ReceivedShareResponse(
+                id=grant.id,
+                skillId=grant.skill_id,
+                skillName=entry.name,
+                skillCategory=entry.category,
+                granteeType=grant.grantee_type.value,
+                permission=grant.permission.value,
+                grantedBy=grant.granted_by,
+                grantedAt=grant.granted_at,
+            )
+        )
+    return results
 
 
 @router.get("/skills/{skill_id}/shares", response_model=list[ShareGrantResponse])

@@ -672,12 +672,14 @@ which now starts the background task itself.
 
 ## Phase 3 — Compete on trust (3–6 months)
 
-**Status (2026-09-02):** 3.3 done this session, with an Explore pass
-surfacing that "audit export" needed real persistence built first (see
-its section below). 3.1 (usage-based ranking), 3.2 (grant-lookup
-caching), and 3.4 (jaas-ui missing surfaces) remain not started — each
-gets its own Explore→Plan pass before implementation, per this
-document's process.
+**Status (2026-09-02):** 3.3 and 3.4 done this session, both preceded by
+an Explore pass that found the roadmap's own descriptions undersold or
+mismatched real scope (see their sections below). Only 3.1 (usage-based
+ranking) and 3.2 (grant-lookup caching) remain not started — the two
+items the roadmap itself already flagged as medium breaking-change risk,
+needing careful rollout/correctness design, not just UI/persistence
+plumbing. Each still gets its own Explore→Plan pass before
+implementation, per this document's process.
 
 ### 3.1 — Usage-based discovery ranking · `jaas-registry`
 
@@ -801,20 +803,94 @@ fixture updated). New tests: `tests/unit/test_audit_events_yank_and_share.py`,
 `tests/integration/test_audit_export_endpoint.py`. 758 → 786 backend
 tests passing; ruff clean; no new mypy errors.
 
-### 3.4 — Ship the missing UI surfaces · `jaas-ui`
+### 3.4 — Ship the missing UI surfaces · `jaas-ui` — ✅ DONE (2026-09-02)
 
-**What:** Backend already supports a published-file viewer, cross-tenant
-sharing audit page, and share/validation notifications — none has
-frontend today. Pure UI debt-paydown, no backend work.
-**Breaking-change risk:** Low — new pages/components, not modifications to
-existing ones (though this is also where Phase 1.3's `status` field
-finally gets a UI treatment — the yanked-version warning banner belongs
-here).
-**Improves:** Closes real UI gaps against already-shipped backend
-capability.
-**Impacted areas (preliminary):** new pages under `src/app/(app)/`, new
-components alongside `src/components/drafts/` and wherever the existing
-skill-detail view lives.
+**Reality check found via an Explore pass across both repos before
+building anything — 3 of the roadmap's 4 named sub-items didn't match
+the actual code:**
+- **Published-file viewer**: already fully built
+  (`skill-files-viewer.tsx`, wired into the skill detail page with a
+  Monaco read-only editor and a source-repo tab) — the roadmap's "none
+  has frontend today" was simply wrong. Nothing built here; would have
+  been pure duplication.
+- **Cross-tenant sharing audit page**: didn't map to one clean backend
+  surface. Split into (a) `GrantStore.list_for_grantee()` — real,
+  useful, but never exposed by any route — and (b) Phase 3.3's generic
+  multi-event-type tenant audit-export, unrelated to sharing
+  specifically and out of this pass's agreed scope (no UI built for it).
+- **Share/validation notifications**: no notification concept exists
+  anywhere in the backend (no email/SSE/websocket/inbox) — same kind of
+  roadmap-description-bigger-than-reality gap as Phase 3.3's "audit
+  export." Not built; "validation" already has a real UI as inline
+  panels in the draft workspace, and "share" is covered by the
+  richer "shared with me" work below instead of an invented
+  notification system.
+- **Yank-status warning banner**: confirmed exactly as described —
+  backend-ready (`status` on `SkillMetadataResponse`/`SearchResultItem`
+  since Phase 1.3), frontend types never updated to read it, deliberately
+  deferred per Phase 1.3's own note. The one sub-item that needed no
+  rescoping.
+
+Two more real, adjacent gaps were found and folded in with the user's
+sign-off: the Phase 3.3 governance fields were also backend-ready and
+silently unrendered (same page, same staleness pattern as yank status),
+and `jaas-api-types.ts` was stale — missing `status` on both response
+types and all three governance fields entirely.
+
+**What we built:**
+- **`GET /shares/received`** (`jaas-skills/api/routes.py`) — new route
+  exposing the previously-dead `list_for_grantee()`, enriched with
+  skill name/category. Requires sign-in, matches grants made to the
+  caller directly *and* to their active tenant.
+- **`YankStatusBanner`/`GovernanceCard`** (`jaas-ui/components/skills/`)
+  — both render `null` for the common case (active status, no governance
+  record), wired into the skill detail page.
+- **`/skills?visibility=shared-with-me` now fetches real grant data** —
+  jaas-ui already had a "Shared with Me" nav link and filter chip, using
+  a clever client-side inference over search results (an already-visible
+  private item neither owned by me nor my tenant must have arrived via a
+  grant). That inference logically still holds, but can't show *who*
+  shared it or *when* (`SearchResultItem` carries no grant metadata) —
+  replaced with a real fetch against the new endpoint for that one
+  filter value, rendering a dedicated table (name/category/permission/
+  shared-by/shared-at). Every other filter is untouched.
+- **`jaas-api-types.ts` updated**: `status` added to both response
+  types, `businessPurpose`/`systemsAccessed`/`governanceReviewDate`
+  added to `SkillMetadataResponse`, new `ReceivedShareResponse` type.
+
+**A real backend bug found only by testing against the actual running
+stack, not just the test suite:** `PUT /skills/{id}/governance`'s
+`skills:governance` permission scope was defined and used to build the
+route (Phase 3.3), fully covered by integration tests using hand-minted
+JWTs — but never added to `authn/service.py`'s `_MEMBER_SCOPES`, so no
+real login-minted token could ever carry it. Every test passed because
+`tests/fixtures/jwt_tokens.py::make_token()` accepts any scope string
+with no cross-check against what a real sign-in issues. Caught by
+starting the real local stack (`./run.sh`), signing in for real, and
+finding an empty/rejected response where real data should have appeared
+— fixed in `_MEMBER_SCOPES`, with a full manual verification pass after
+(yank banner, governance card, and the shared-with-me table all
+confirmed rendering correctly against real API responses via a scripted
+Playwright session, screenshotted).
+
+**Does it break anything?** No — one new backend route, three new/
+modified frontend components, one branch added to an existing page's
+data-fetching (the other filter values' code path is byte-for-byte
+unchanged), and a permission-scope fix that only *adds* what a member
+token can do, never removes anything.
+
+**Impacted areas (actual):** `jaas-skills`: `api/schemas.py`
+(`ReceivedShareResponse`), `api/routes.py` (new route),
+`authn/service.py` (`_MEMBER_SCOPES` fix),
+`tests/integration/test_shares_received_endpoint.py`,
+`tests/unit/test_authn_service.py` (scope assertion added). `jaas-ui`:
+`src/lib/jaas-api-types.ts`, `src/lib/skills-api.ts`,
+`src/lib/visibility-filter.ts`, `src/app/(app)/skills/page.tsx`,
+`src/app/(app)/skills/[id]/versions/[version]/page.tsx`, new
+`src/components/skills/yank-status-banner.tsx`+test, new
+`src/components/skills/governance-card.tsx`+test. 786 → 791 backend
+tests passing; jaas-ui: 10 → 15 frontend tests passing, lint/build
+clean. Both repos' `SKILL.md` conventions files updated.
 
 ---
 

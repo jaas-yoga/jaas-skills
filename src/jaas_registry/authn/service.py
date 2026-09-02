@@ -23,7 +23,11 @@ from jaas_registry.common.errors import ErrorCode, JaasError
 # ui-design.md §6.1: base scopes every member gets; tenant:admin is layered
 # on top for admins. skills:share lets an owner create/revoke share grants
 # on their own skills regardless of tenant role (ui-design.md §5.2).
-_MEMBER_SCOPES = ("skills:read", "skills:write", "skills:share")
+# skills:governance is the same story for PUT /skills/{id}/governance
+# (IMPLEMENTATION_PLAN.md Phase 3.4) — an owner sets their own skill's
+# governance record regardless of tenant role, same authorization tier as
+# skills:share underneath (_require_share_management_access).
+_MEMBER_SCOPES = ("skills:read", "skills:write", "skills:share", "skills:governance")
 _ADMIN_SCOPES = (*_MEMBER_SCOPES, "tenant:admin")
 
 # Local-dev-only stand-in for Google sign-in (Settings.dev_login_password).

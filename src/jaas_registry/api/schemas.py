@@ -157,6 +157,21 @@ class ShareGrantResponse(BaseModel):
     grantedAt: str
 
 
+class ReceivedShareResponse(BaseModel):
+    """Phase 3.4: one grant made *to* the caller, enriched with just enough
+    skill metadata (name/category) to render a "Shared with me" list
+    without a second round trip per row."""
+
+    id: str
+    skillId: str
+    skillName: str
+    skillCategory: str
+    granteeType: str
+    permission: str
+    grantedBy: str
+    grantedAt: str
+
+
 class CreateShareGrantRequest(BaseModel):
     granteeType: str
     granteeId: str

@@ -109,6 +109,12 @@ def test_first_sign_in_creates_user_and_personal_tenant_as_admin(service, settin
     claims = _decode(result.access_token, settings)
     assert claims.subject == result.user.id
     assert "tenant:admin" in claims.scopes
+    # IMPLEMENTATION_PLAN.md Phase 3.4: PUT /skills/{id}/governance is
+    # gated on this scope, same owner-or-tenant-admin tier as skills:share
+    # — an owner must be able to set governance on their own skill
+    # regardless of tenant role, so it belongs on every member's base
+    # scope set, not just admins'.
+    assert "skills:governance" in claims.scopes
 
 
 def test_second_sign_in_reuses_the_same_user_and_tenant(service):

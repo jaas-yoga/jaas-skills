@@ -177,6 +177,39 @@ shape — don't invent a new one:
 - A caller who can see a public/owned skill but not a private one they lack
   access to gets `SKILL_NOT_FOUND` / `DRAFT_NOT_FOUND` (404), never 403 —
   don't leak whether a private resource exists.
+- **`GET /shares/received` (Phase 3.4, `api/routes.py`) exposes
+  `GrantStore.list_for_grantee()`** — that function existed since sharing
+  was first built (its own docstring already named this exact "shared
+  with me" use case) but no route ever called it until this pass. Matches
+  grants made to the caller's user id *and* their active tenant id (two
+  `list_for_grantee` calls, merged) — requires real sign-in
+  (`caller.user_id is not None`), rejected outright otherwise, unlike
+  search/metadata's auth-optional posture. Enriches each grant with the
+  referenced skill's current name/category so the frontend doesn't need a
+  second round trip per row.
+
+## Permission scopes: defined ≠ actually grantable (`authn/service.py`)
+
+**A new permission scope string used in `required_permissions=(...)` at a
+route is not enough on its own — it must also be added to
+`authn/service.py`'s `_MEMBER_SCOPES`/`_ADMIN_SCOPES`, or no real
+login-minted token will ever carry it.** This bit Phase 3.4's
+`skills:governance` scope for real: the route
+(`PUT /skills/{id}/governance`) was built and fully covered by
+integration tests using hand-minted JWTs (`tests/fixtures/jwt_tokens.py`'s
+`make_token(scopes=(...))`, which accepts *any* scope string with no
+cross-check against what a real sign-in would ever issue) — every test
+passed, but the endpoint was unreachable by any actual user until this
+was caught by manually exercising the real running stack
+(`./run.sh` + a real `POST /api/v1/auth/login`) and finding an empty
+response where real data should have appeared. Whenever a route gates on
+a permission scope that doesn't already exist elsewhere, grep
+`authn/service.py`'s `_MEMBER_SCOPES`/`_ADMIN_SCOPES` before considering
+the feature done — a green test suite proves the route's *logic* is
+correct, not that a real caller can ever reach it. PATs inherit whatever
+scopes the issuing session token already has
+(`api/account_routes.py:82`), so fixing `_MEMBER_SCOPES` fixes PAT access
+too, with no separate PAT-side change needed.
 
 ## Publish-time guardrails (`guardrails/`, design.md §4.5)
 
