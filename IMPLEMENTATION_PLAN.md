@@ -402,6 +402,14 @@ from 1.1 to validate itself).
 
 ## Phase 2 — Interoperate with the standard (1–3 months)
 
+**Status (2026-09-02):** 2.3 and 2.4 done (2.3 landed ahead of sequence
+during Phase 1; 2.4 done this session, with a corrected design — see its
+section below). 2.1 (SKILL.md/agentskills.io import-export) and 2.2
+(`jaasctl search/pull/install`) remain not yet started; per this
+document's own process, each gets its own Explore→Plan pass before
+implementation begins, since — unlike Phase 1 — they were only scoped
+from the roadmap audit, not verified line-by-line against the code yet.
+
 ### 2.1 — SKILL.md / agentskills.io import & export · `jaas-registry` + `jaas-ui`
 
 **What we're building:** A bidirectional mapping between this registry's
@@ -485,26 +493,75 @@ Commits: `0ad5aa9` (jaas-skills), `97e1611` (jaas-ui).
 added to this `S3ObjectStore`, not just `LocalFilesystemStore` — noted in
 1.3's impacted-areas above.
 
-### 2.4 — Wire up the existing event-bus index sync · `jaas-registry`
+### 2.4 — Wire up multi-replica index sync · `jaas-registry` — ✅ DONE (2026-09-02)
 
-**What we're building:** The multi-replica index-sync consumer/event-bus
-machinery already exists in the codebase (the same `IndexEventConsumer`
-touched by Phase 1.3's yank event) but is never actually invoked from
-`create_app()` — so multi-replica deployments don't stay in sync today.
-This wires the existing machinery in.
+**Design deviation from the roadmap wording, found via TDD exploration
+before writing any code:** the item as scoped ("wire up the existing
+event-bus index sync") turns out not to achieve its own stated goal.
+`index/events.py::InMemoryEventBus` is a plain in-process Python list — its
+own docstring calls it a stand-in for Kafka/SQS/Pub-Sub. It cannot carry an
+event across separate OS processes, which is what "replica" means for a
+horizontally-scaled deployment; wiring it into `create_app()` would only
+ever synchronize async tasks *within one process*, never actually solving
+multi-replica staleness. The codebase already has the right tool for this
+job: `index/reconciliation.py::reconcile()` rebuilds an authoritative index
+straight from the shared object store (the same code `bootstrap_index()`
+uses at cold start, including re-reading each entry's yank-status
+sidecar), so it's process-safe by construction with no shared memory or
+message transport required. **What actually got built** is a periodic
+reconciliation loop, not an event-bus wire-up.
 
-**Breaking-change risk:** Low, but not zero — turning on previously-dead
-sync code for the first time can surface latent bugs in code paths that
-have never run in production. Needs a real multi-replica test, not just
-unit tests. Cheapest item on the whole roadmap per the audit, but "cheap
-to code" isn't the same as "zero risk to enable."
+**What we built:** `index/background_sync.py::reconcile_periodically()` —
+an `asyncio` loop that reruns `reconcile()` (offloaded to a worker thread
+via `asyncio.to_thread`, since `reconcile()`/`bootstrap_index()` are
+synchronous blocking I/O) on a fixed interval until a `stop_event` fires.
+Wired into `create_app()` via a new FastAPI `lifespan` context manager
+(the app had none before), started only if
+`FeatureFlags.background_index_reconciliation` is on (default **on**;
+additive flag, defaults preserve today's single-replica behavior since
+`reconcile()` against an already-authoritative index is a safe no-op), on
+`Settings.index_reconciliation_interval_seconds` (default 300s). Also
+fixed the Phase 1.3-documented `event_id` collision landmine in
+`index/events.py::new_index_update_event()` (now takes `kind: str =
+"publish"`, `event_id` includes it) — cheap, correct hygiene fix, done
+even though the event bus isn't the live sync mechanism, since it was a
+one-line change sitting right next to code this item touched and the
+default preserves every existing call site's behavior.
 
-**What it improves:** Correctness for any multi-replica deployment (single-
-replica deployments are unaffected either way, since sync only matters
-once there's more than one).
+**Does it break anything?** No — `background_index_reconciliation`
+defaults to on, but `reconcile()` running against an index that's already
+correct is a verified no-op (`test_reconcile_on_already_consistent_index_reports_no_drift`,
+pre-existing). Single-replica deployments (today's only real deployment
+shape) see zero behavior change beyond a periodic no-op storage listing
+every 5 minutes. The event bus/`IndexEventConsumer` are untouched other
+than the additive `kind` param.
 
-**Impacted areas (preliminary):** `create_app()` / app startup wiring
-(likely `main.py` or `app.py`), no data-model changes expected.
+**What it improves:** A second replica now converges onto a publish or
+yank made by another replica within one reconciliation interval, without
+needing any message transport between them — closes the actual multi-
+replica correctness gap the roadmap named, via a mechanism proven safe by
+the existing `reconcile()` test suite rather than a previously-dead code
+path being turned on for the first time in production.
+
+**Impacted areas (actual):** new `src/jaas_registry/index/background_sync.py`,
+`api/app.py` (`create_app()` gains a `lifespan`), `common/config.py`
+(`FeatureFlags.background_index_reconciliation`,
+`Settings.index_reconciliation_interval_seconds`), `index/events.py`
+(`new_index_update_event()`'s `kind` param). New tests:
+`tests/unit/test_index_background_sync.py`,
+`tests/integration/test_background_index_sync_app.py`, plus 3 new cases
+in `tests/unit/test_events_and_consumer.py` covering the collision fix.
+714 → 722 backend tests passing; ruff clean; no new mypy errors (same
+pre-existing unrelated baseline). `.claude/skills/jaas-backend-conventions/SKILL.md`
+updated with the reconciliation-vs-event-bus rationale and a note that
+the event bus remains available as a future upgrade path if reconciliation's
+polling latency ever isn't good enough (design.md §3.2 note 6).
+
+**Not touched:** `index/events.py::InMemoryEventBus`/`IndexEventConsumer`
+stay exactly as before structurally — real, tested, but still only
+exercised by tests, not wired into any live route. `jaasctl serve`
+(`cli.py::cmd_serve`) needed no changes; it already calls `create_app()`,
+which now starts the background task itself.
 
 ---
 

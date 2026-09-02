@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from opentelemetry.trace import Tracer
 
@@ -34,6 +38,7 @@ from jaas_registry.drafts.store import DraftStore
 from jaas_registry.guardrails.client import GuardrailsClient, HttpGuardrailsClient
 from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
 from jaas_registry.guardrails.policy import GuardrailPolicyStore
+from jaas_registry.index.background_sync import reconcile_periodically
 from jaas_registry.index.store import InMemoryIndex
 from jaas_registry.observability.tracing import build_tracer
 from jaas_registry.sharing.grants import GrantStore
@@ -66,7 +71,31 @@ def create_app(
     guardrails_client: GuardrailsClient | None = None,
     tracer: Tracer | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="JaaS Skills", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # index/background_sync.py: the real multi-replica index-sync
+        # mechanism (see its module docstring for why the event bus in
+        # index/events.py can't do this job across separate processes).
+        stop_event = asyncio.Event()
+        task: asyncio.Task[None] | None = None
+        if settings.feature_flags.background_index_reconciliation:
+            task = asyncio.create_task(
+                reconcile_periodically(
+                    index,
+                    store,
+                    interval_seconds=settings.index_reconciliation_interval_seconds,
+                    stop_event=stop_event,
+                )
+            )
+        _app.state.background_reconciliation_task = task
+        try:
+            yield
+        finally:
+            stop_event.set()
+            if task is not None:
+                await task
+
+    app = FastAPI(title="JaaS Skills", version="0.1.0", lifespan=lifespan)
     app.state.index = index
     app.state.store = store
     app.state.settings = settings

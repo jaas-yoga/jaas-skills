@@ -46,9 +46,16 @@ class InMemoryEventBus:
         return events
 
 
-def new_index_update_event(*, skill_id: str, version: str, tag_key: str) -> IndexUpdateEvent:
+def new_index_update_event(
+    *, skill_id: str, version: str, tag_key: str, kind: str = "publish"
+) -> IndexUpdateEvent:
+    """`kind` discriminates event_id by what happened, not just which
+    (skill_id, version) it happened to — without it, a publish event and a
+    later yank event for the same version would collide on event_id and the
+    yank would be silently dropped by IndexEventConsumer's dedup (see
+    IMPLEMENTATION_PLAN.md Phase 1.3/2.4)."""
     return IndexUpdateEvent(
-        event_id=f"{skill_id}@{version}",
+        event_id=f"{skill_id}@{version}:{kind}",
         skill_id=skill_id,
         version=version,
         tag_key=tag_key,

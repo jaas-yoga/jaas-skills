@@ -63,6 +63,66 @@ def test_consumer_apply_is_idempotent_for_same_event_id(tmp_path):
     assert index.list_versions(SKILL_ID) == [SKILL_VERSION]
 
 
+def test_publish_and_yank_events_for_same_skill_version_have_distinct_event_ids():
+    publish_event = new_index_update_event(
+        skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=TAG_KEY, kind="publish"
+    )
+    yank_event = new_index_update_event(
+        skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=TAG_KEY, kind="yank"
+    )
+    assert publish_event.event_id != yank_event.event_id
+
+
+def test_event_kind_defaults_to_publish_for_existing_call_sites():
+    event = new_index_update_event(skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=TAG_KEY)
+    assert event.event_id == new_index_update_event(
+        skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=TAG_KEY, kind="publish"
+    ).event_id
+
+
+def test_consumer_applies_yank_event_after_publish_event_for_same_skill_version(tmp_path):
+    store = LocalFilesystemStore(tmp_path)
+    tag_key = _write_published_record(store)
+    bus = InMemoryEventBus()
+    bus.publish(
+        new_index_update_event(
+            skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=tag_key, kind="publish"
+        )
+    )
+
+    index = InMemoryIndex()
+    consumer = IndexEventConsumer(index=index, store=store, sleep_fn=lambda _: None)
+    consumer.consume_from(bus)
+    assert index.get(SKILL_ID, SKILL_VERSION).status.value == "active"
+
+    from jaas_registry.artifact.yank import YankRecord, write_status
+    from jaas_registry.index.models import ArtifactStatus
+
+    write_status(
+        store,
+        skill_id=SKILL_ID,
+        version=SKILL_VERSION,
+        record=YankRecord(
+            status=ArtifactStatus.YANKED,
+            reason="test",
+            actor="tester",
+            at="2026-01-01T00:00:00+00:00",
+        ),
+    )
+    bus.publish(
+        new_index_update_event(
+            skill_id=SKILL_ID, version=SKILL_VERSION, tag_key=tag_key, kind="yank"
+        )
+    )
+    consumer.consume_from(bus)
+
+    # Without the kind discriminator, this event_id would already be in
+    # _applied_event_ids from the publish event above and would be silently
+    # dropped as a duplicate — this is the collision bug flagged in
+    # IMPLEMENTATION_PLAN.md Phase 1.3 / fixed as part of Phase 2.4.
+    assert index.get(SKILL_ID, SKILL_VERSION).status.value == "yanked"
+
+
 def test_consumer_moves_persistently_failing_event_to_dead_letter(tmp_path):
     store = LocalFilesystemStore(tmp_path)
     event = new_index_update_event(

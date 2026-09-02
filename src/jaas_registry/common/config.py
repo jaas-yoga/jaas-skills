@@ -26,6 +26,16 @@ class FeatureFlags(BaseSettings):
     # (no ambient CI OIDC identity to sign with), so enabling this
     # effectively restricts releases to GitHub-Actions-OIDC callers only.
     sigstore_signing_required: bool = False
+    # api/app.py's create_app(): a background task that reruns
+    # index/reconciliation.py::reconcile() on Settings.
+    # index_reconciliation_interval_seconds. This is the real mechanism for
+    # multi-replica index sync — see index/background_sync.py's module
+    # docstring for why the event bus (index/events.py) can't do this job.
+    # On by default: reconcile() rebuilds from the same shared object store
+    # bootstrap_index() already reads at cold start, so it's safe and cheap
+    # at today's tested corpus size; revisit the default once the roadmap's
+    # 50k-package scale target is load-tested (Phase 4.4).
+    background_index_reconciliation: bool = True
 
 
 class Settings(BaseSettings):
@@ -87,6 +97,11 @@ class Settings(BaseSettings):
     artifact_url_ttl_seconds: int = 120
 
     index_cold_start_timeout_seconds: int = 120
+    # index/background_sync.py: how often the background reconciliation task
+    # reruns reconcile() while feature_flags.background_index_reconciliation
+    # is on. 300s (5 min) balances multi-replica staleness against the cost
+    # of a full store listing/rebuild on every tick at scale.
+    index_reconciliation_interval_seconds: float = 300.0
 
     # design.md §4.5: the standalone jaas-guardrails service — a separate
     # codebase/process (see the jaas-guardrails-catalog repo), never

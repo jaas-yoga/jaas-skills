@@ -112,28 +112,46 @@ shape — don't invent a new one:
   self._entries[skill_id]` (a dict-key hit) *before* filtering, since that
   can only be true for a literal version string, never `"latest"`/
   `"stable"`/a range expression.
-- **Known landmine for whoever picks up Phase 2.4** ("wire up the existing
-  event-bus index sync"): `index/events.py::new_index_update_event()`
-  derives `event_id` as `f"{skill_id}@{version}"`, and
-  `IndexEventConsumer.apply()` dedupes purely on `event_id`
-  (`index/consumer.py`). A yank event for the same `(skill_id, version)` a
-  publish event already used would be **silently dropped as a duplicate**
-  if emitted with the same `event_id` shape. This doesn't bite today only
-  because **no live route actually wires an `EventBus` into
-  `publish_skill()`** — `release_routes.py`/`draft_routes.py`/`cli.py` all
-  call `index.put()` directly, so the event bus is exercised only inside
-  `test_publish_to_index_sync.py`'s isolated unit test. The moment 2.4
-  wires a real bus in, any code that also emits a yank event through it
-  needs a distinct `event_id` (e.g. a discriminator suffix) — this was
-  deliberately *not* fixed pre-emptively in `index/events.py` since nothing
-  calls it that way yet (see IMPLEMENTATION_PLAN.md Phase 1.3's design-
-  deviation note).
+- **Phase 2.4 landmine — fixed, not just documented anymore**:
+  `index/events.py::new_index_update_event()` now takes a `kind: str =
+  "publish"` param and derives `event_id` as `f"{skill_id}@{version}:{kind}"`
+  — a yank event and a publish event for the same `(skill_id, version)` no
+  longer collide in `IndexEventConsumer.apply()`'s dedup set. Existing call
+  sites that omit `kind` are unaffected (`kind` defaults to `"publish"`, same
+  `event_id` shape as before this fix). Still true, deliberately: no live
+  route emits a yank event through the bus — see the reconciliation note
+  below for why that's fine.
 - `InMemoryIndex.list_versions()` returns `sorted(self._entries[skill_id])`
   — a **plain lexicographic string sort, not semver-aware**
   (`"10.0.0" < "2.0.0"`). Fine for `_require_share_management_access()`'s
   "grab any version, ownership doesn't vary by version" use, but don't
   reach for `list_versions()[-1]` expecting "the highest semver version" —
   that's what `get_resolved()`/`resolve_version()` are for.
+- **Multi-replica index sync (Phase 2.4) is periodic reconciliation, not the
+  event bus** — `index/background_sync.py::reconcile_periodically()` reruns
+  `index/reconciliation.py::reconcile()` on a timer
+  (`Settings.index_reconciliation_interval_seconds`, default 300s), wired
+  into `create_app()`'s FastAPI `lifespan` and gated by
+  `FeatureFlags.background_index_reconciliation` (default **on**). This
+  deviates from the roadmap's literal wording ("wire up the existing
+  event-bus index sync") on purpose: `index/events.py::InMemoryEventBus` is
+  a plain in-process Python list (its own docstring says so) — it cannot
+  carry an event across separate OS processes, which is what "replica"
+  means for a horizontally-scaled deployment. Wiring it into `create_app()`
+  would only synchronize async tasks within one process and would not
+  solve the actual multi-replica problem at all. `reconcile()` already
+  rebuilds from the shared object store (same code `bootstrap_index()` uses
+  at cold start, including re-reading each entry's yank-status sidecar via
+  `apply_status`/`read_status`), so it's process-safe by construction with
+  no new transport needed. The event bus (`InMemoryEventBus`,
+  `IndexEventConsumer`) stays exactly as before — real, tested, but only
+  exercised by tests and never wired into a live route; it remains the
+  natural place to plug in a real broker (Kafka/SQS/Pub-Sub) later if
+  reconciliation's polling latency (up to one interval) ever isn't good
+  enough, per design.md §3.2 note 6. `reconcile()` is a full store listing
+  + rebuild on every tick — cheap at today's tested corpus size, revisit
+  the interval or move to incremental sync before Phase 4.4's 50k-package
+  load test.
 - `_require_share_management_access()` (`api/routes.py`) takes a
   `required_permissions: tuple[str, ...] = ("skills:share",)` param now,
   not a hardcoded scope — `/yank` and `/unyank` reuse it with
