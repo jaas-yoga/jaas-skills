@@ -33,7 +33,13 @@ Claude Code plan state.
 
 ---
 
-## Phase 1 — Harden the foundation (0–4 weeks) — implementing now
+## Phase 1 — Harden the foundation (0–4 weeks) — ✅ ALL THREE ITEMS DONE (2026-09-02)
+
+All of 1.1, 1.2, and 1.3 landed this session, built test-first throughout.
+Combined with Phase 2.3 (landed ahead of sequence, see below), Phase 1 of
+this roadmap is complete. See each item's own "✅ DONE" section for what
+shipped, what deviated from the original plan, and the real bugs TDD
+caught before they reached production.
 
 ### 1.1 — Frontend test suite (Playwright + component tests) · `jaas-ui` — ✅ DONE (2026-09-02)
 
