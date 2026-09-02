@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from jaas_registry.artifact.governance import apply_governance, read_governance
 from jaas_registry.artifact.yank import apply_status, read_status
 from jaas_registry.index.events import EventBus, IndexUpdateEvent
 from jaas_registry.index.ingest import parse_published_record
@@ -65,6 +66,7 @@ class IndexEventConsumer:
                 entry = apply_status(
                     entry, read_status(self.store, skill_id=entry.id, version=entry.version)
                 )
+                entry = apply_governance(entry, read_governance(self.store, skill_id=entry.id))
                 self.index.put(entry)
                 self._applied_event_ids.add(event.event_id)
                 self.last_applied_at = time.time()

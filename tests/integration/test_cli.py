@@ -12,6 +12,7 @@ from tests.fixtures.package_dir import write_package_dir
 def _isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("JAAS_STORAGE_ROOT", str(tmp_path / "storage"))
     monkeypatch.setenv("JAAS_POLICY_DIR", str(tmp_path / "policy"))
+    monkeypatch.setenv("JAAS_AUDIT_DIR", str(tmp_path / "audit"))
     return tmp_path
 
 

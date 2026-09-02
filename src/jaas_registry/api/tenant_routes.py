@@ -18,6 +18,7 @@ from jaas_registry.api.deps import (
     GuardrailCatalogDep,
     GuardrailPolicyStoreDep,
     GuardrailsClientDep,
+    IndexDep,
     InviteStoreDep,
     MembershipStoreDep,
     RepoLinkStoreDep,
@@ -43,7 +44,8 @@ from jaas_registry.api.schemas import (
 from jaas_registry.authn.models import TenantRole
 from jaas_registry.authn.tenants import MembershipStore
 from jaas_registry.authz.base import Authorizer
-from jaas_registry.common.audit import StructuredLogAuditSink, new_custom_guardrail_rule_event
+from jaas_registry.common.audit import new_custom_guardrail_rule_event
+from jaas_registry.common.audit_store import FileAuditSink
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.sharing.access import CallerContext, resolve_caller_context
@@ -321,7 +323,7 @@ def put_custom_guardrail_rule(
         config=body.config,
         created_by=caller.user_id or "",
     )
-    StructuredLogAuditSink().emit_custom_guardrail_change(
+    FileAuditSink(settings.audit_dir).emit_custom_guardrail_change(
         new_custom_guardrail_rule_event(
             actor=caller.user_id or "",
             tenant_id=tenant_id,
@@ -350,7 +352,7 @@ def delete_custom_guardrail_rule(
         raise JaasError(
             ErrorCode.CUSTOM_GUARDRAIL_NOT_FOUND, f"custom guardrail rule '{slug}' not found"
         )
-    StructuredLogAuditSink().emit_custom_guardrail_change(
+    FileAuditSink(settings.audit_dir).emit_custom_guardrail_change(
         new_custom_guardrail_rule_event(
             actor=caller.user_id or "",
             tenant_id=tenant_id,
@@ -453,3 +455,50 @@ def delete_repo_link(
     found = repo_link_store.delete(tenant_id=tenant_id, skill_id=skill_id)
     if not found:
         raise JaasError(ErrorCode.REPO_LINK_NOT_FOUND, f"no repo link for skill id '{skill_id}'")
+
+
+def _record_belongs_to_tenant(record: dict, *, tenant_id: str, index) -> bool:
+    """PublishAuditEvent/YankAuditEvent/ShareGrantAuditEvent carry no
+    tenant_id of their own (common/audit.py) — scope those by the
+    referenced skill's *current* owner_tenant in the index instead.
+    CustomGuardrailRuleAuditEvent/GitHubConnectionAuditEvent already carry
+    tenant_id directly. A skill_id that no longer resolves to any version
+    (shouldn't happen — publishing is immutable/append-only) is excluded
+    rather than included, so a lookup failure can never leak a record into
+    the wrong tenant's export."""
+    if "tenant_id" in record:
+        return bool(record["tenant_id"] == tenant_id)
+    skill_id = record.get("skill_id")
+    if skill_id is None:
+        return False
+    versions = index.list_versions(skill_id)
+    if not versions:
+        return False
+    entry = index.get(skill_id, versions[-1])
+    return entry is not None and entry.owner_tenant == tenant_id
+
+
+@router.get("/{tenant_id}/audit-export")
+def export_audit_trail(
+    tenant_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    index: IndexDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> list[dict]:
+    """IMPLEMENTATION_PLAN.md Phase 3.3: durable audit records for this
+    tenant, oldest first. Admin-only — an audit trail is itself sensitive
+    (who did what, when), same tier as guardrail-policy/custom-guardrail-
+    rule management. Records are heterogeneous by event_type (see
+    common/audit.py's event dataclasses), so this deliberately returns raw
+    dicts rather than a single fixed response_model."""
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_admin(membership_store, tenant_id, caller)
+
+    all_records = FileAuditSink(settings.audit_dir).read_all()
+    return [
+        record
+        for record in all_records
+        if _record_belongs_to_tenant(record, tenant_id=tenant_id, index=index)
+    ]

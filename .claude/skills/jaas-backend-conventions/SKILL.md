@@ -410,6 +410,61 @@ purpose:
   `pull`/`install` — not loosened here either. `import` is purely local/
   offline, closer to `validate` — no `--api-url`/`--token` at all.
 
+## Durable audit trail & governance records (Phase 3.3, `common/audit_store.py`, `artifact/governance.py`)
+
+- **`FileAuditSink` (`common/audit_store.py`) is a real, durable file
+  writer** — a drop-in replacement for `StructuredLogAuditSink`
+  (`common/audit.py`) that both prints (identical JSON shape, nothing
+  that tails process logs loses output) *and* appends one JSON line per
+  event to `Settings.audit_dir/audit.jsonl`. Every production audit call
+  site uses it now (`cli.py::cmd_publish`, `release_routes.py`,
+  `draft_routes.py`, `tenant_routes.py`, `github_routes.py`, plus the new
+  yank/share-grant call sites in `api/routes.py`) — **except
+  `index/demo_seed.py`, deliberately left on `StructuredLogAuditSink`**
+  (print-only) since its synthetic seed publishes on every fresh checkout
+  would otherwise pollute a real audit export with fake events. Don't
+  "fix" that one to use `FileAuditSink` without re-reading why.
+- **New `Settings.audit_dir` is a real on-disk location** — any test
+  fixture that constructs `Settings(...)` and exercises a route touching
+  `FileAuditSink` needs it isolated, or it shares one real, unisolated
+  path with every other test in the suite. This is handled globally by
+  `tests/conftest.py::_isolated_audit_dir` (an `autouse` fixture that sets
+  `JAAS_AUDIT_DIR` per test) rather than by editing every individual test
+  file — pydantic-settings reads env vars for any `Settings(...)` field
+  not explicitly passed as a constructor kwarg, so this isolates every
+  existing and future fixture automatically. If you ever see audit
+  records leaking between tests, check this fixture is still active
+  before suspecting anything else.
+- **Audit coverage now includes yank/unyank and share-grant create/
+  revoke** (`YankAuditEvent`/`ShareGrantAuditEvent` in `common/audit.py`)
+  — these were a real, pre-existing gap (only publish/guardrail-rule-
+  changes/GitHub-connections were audited before Phase 3.3), closed
+  deliberately, not silently expanded without noting it.
+- **Governance records (`artifact/governance.py`) are keyed by `skill_id`
+  alone, not `skill_id`+`version`** — unlike the yank-status sidecar
+  (`artifact/yank.py`) they otherwise mirror exactly. A skill's business
+  purpose/systems-accessed/review-date doesn't vary release to release,
+  so `PUT /api/v1/skills/{id}/governance` overlays the same record onto
+  *every* version's `IndexEntry`, not just one. "Owning team" is
+  deliberately **not** a new field — it reuses `IndexEntry.owner_team`
+  (the publish-time manifest owner) rather than adding a second,
+  potentially-conflicting team-ownership concept.
+- **`skills:governance` is its own permission scope**, distinct from
+  `skills:write` (yank) and `skills:share` (share grants) — a compliance
+  action, not a publish or sharing action. All three still share the same
+  `_require_share_management_access()` owner-or-tenant-admin authorization
+  tier underneath (`required_permissions=` just varies per caller).
+- **`GET /tenants/{id}/audit-export`'s tenant-scoping is asymmetric by
+  event type** — `CustomGuardrailRuleAuditEvent`/`GitHubConnectionAuditEvent`
+  carry `tenant_id` directly; `PublishAuditEvent`/`YankAuditEvent`/
+  `ShareGrantAuditEvent` don't (see `common/audit.py`'s field lists — this
+  wasn't changed, since none of those event types have any other reason
+  to carry a tenant_id), so those are scoped by looking up the referenced
+  skill's *current* `owner_tenant` in the index instead
+  (`tenant_routes.py::_record_belongs_to_tenant`). A skill_id that
+  doesn't resolve to any version is **excluded**, not included — never
+  guess a tenant in the direction that could leak a record cross-tenant.
+
 ## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
 
 - **Two signature kinds coexist permanently, not just during a

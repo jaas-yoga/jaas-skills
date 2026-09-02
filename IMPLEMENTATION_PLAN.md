@@ -162,7 +162,7 @@ a `functools.lru_cache`-memoized factory (see below) only when actually
 needed. Covered by a new integration test
 (`test_high_assurance_recheck_dispatches_to_sigstore_for_a_sigstore_signed_artifact`).
 
-**Third thing worth knowing:** `sigstore.verify.Verifier.production()`
+**Third thing worth knowing:** `\.Verifier.production()`
 does real network I/O at construction (~2s — fetches Sigstore's
 TUF-distributed trust root). It is **never** called at app startup
 (`api/app.py::create_app()` doesn't import `artifact/sigstore_trust.py` at
@@ -672,6 +672,13 @@ which now starts the background task itself.
 
 ## Phase 3 — Compete on trust (3–6 months)
 
+**Status (2026-09-02):** 3.3 done this session, with an Explore pass
+surfacing that "audit export" needed real persistence built first (see
+its section below). 3.1 (usage-based ranking), 3.2 (grant-lookup
+caching), and 3.4 (jaas-ui missing surfaces) remain not started — each
+gets its own Explore→Plan pass before implementation, per this
+document's process.
+
 ### 3.1 — Usage-based discovery ranking · `jaas-registry`
 
 **What:** Search ranking today is static token-matching with no usage
@@ -700,19 +707,99 @@ scale (fine at prototype scale today).
 consumed — the same routes touched by Phase 1.3's yank authorization
 (`api/routes.py`'s `_require_share_management_access` and its callers).
 
-### 3.3 — Governance surface: audit export, identity fields, EU AI Act mapping · `jaas-registry`
+### 3.3 — Governance surface: audit export, identity fields, EU AI Act mapping · `jaas-registry` — ✅ DONE (2026-09-02)
 
-**What:** New fields on the index/audit model (owning team, business
-purpose, systems accessed, review date) per the Cloud Security Alliance's
-Agentic Trust Framework, plus an audit-export endpoint. EU AI Act
-high-risk obligations take effect August 2026 — this is compliance-driven,
-sales-enablement as much as engineering per the roadmap.
-**Breaking-change risk:** Low — additive fields/endpoint, same pattern as
-other historically-added `IndexEntry` fields.
-**Improves:** Answers the specific fields regulators/enterprise buyers are
-already asking for.
-**Impacted areas (preliminary):** `index/models.py`, `AuditSink` and its
-consumers, a new export API route.
+**Design deviation found via an Explore pass before coding:** "add an
+audit-export endpoint" undersold real scope — no durable, queryable audit
+store existed anywhere. `StructuredLogAuditSink` only ever printed each
+event as JSON to stdout; nothing was persisted, so there was no data to
+actually export. Three scope decisions were resolved with the user before
+implementing: (1) build real file-backed audit persistence now, not defer
+it; (2) also close the pre-existing audit *coverage* gap — yank/unyank and
+share-grant create/revoke were never audited at all, unlike publish/
+guardrail-rule-changes/GitHub-connections; (3) reuse the existing
+`owner_team` field for "owning team" rather than adding a distinct,
+competing governance-owner field.
+
+**What we built, in three stages:**
+- **Durable audit persistence**: `common/audit_store.py::FileAuditSink` —
+  a drop-in `AuditSink` implementation that both prints (same JSON shape
+  as before, nothing that tails process logs loses that output) *and*
+  appends one JSON line per event to `Settings.audit_dir/audit.jsonl`
+  (new `audit_dir` setting, same file-backed convention as
+  `storage_root`/`policy_dir`). Replaced `StructuredLogAuditSink()` at
+  every production call site (`cli.py::cmd_publish`, `release_routes.py`,
+  `draft_routes.py`, `tenant_routes.py` ×2, `github_routes.py` ×4) —
+  **except** `index/demo_seed.py`, deliberately left print-only, since
+  its synthetic seed-data publishes on every fresh checkout would
+  otherwise pollute a real audit export with fake events.
+- **New audit coverage**: `common/audit.py` gains `YankAuditEvent`/
+  `ShareGrantAuditEvent` (+ factory functions, `AuditSink` Protocol
+  methods, `InMemoryAuditSink`/`StructuredLogAuditSink`/`FileAuditSink`
+  implementations). `_set_version_status` (yank/unyank) and
+  `create_share`/`revoke_share` (`api/routes.py`) now emit these.
+- **Governance record**: `artifact/governance.py` — same mutable-sidecar
+  pattern as `artifact/yank.py` (`ObjectStore.write_object`, overlaid
+  post-hoc by `index/bootstrap.py`/`index/consumer.py`), but keyed by
+  `skill_id` alone, not `skill_id`+`version` — a governance record is
+  shared across every version of a skill, since business purpose doesn't
+  vary release to release. Three new `IndexEntry` fields
+  (`business_purpose`, `systems_accessed`, `governance_review_date`, all
+  additive/defaulted). New `PUT /api/v1/skills/{id}/governance` route
+  (`api/routes.py`), gated by a new `skills:governance` permission scope
+  — deliberately distinct from `skills:write`/`skills:share`, since this
+  is a compliance concern, not a publish or sharing action. Exposed on
+  `SkillMetadataResponse`, not `SearchResultItem` — same precedent as
+  every other provenance/governance-style field.
+- **Audit export**: `GET /api/v1/tenants/{id}/audit-export`
+  (`api/tenant_routes.py`), tenant-admin-only (reuses the existing
+  `_require_admin` guard). Scoping is the interesting part:
+  `CustomGuardrailRuleAuditEvent`/`GitHubConnectionAuditEvent` already
+  carry `tenant_id` directly; `PublishAuditEvent`/`YankAuditEvent`/
+  `ShareGrantAuditEvent` don't, so those are scoped by looking up the
+  referenced skill's *current* `owner_tenant` in the index instead — a
+  lookup failure excludes the record rather than including it, so it can
+  never leak cross-tenant.
+
+**Does it break anything?** No — every new field is additive/defaulted
+(`IndexEntry`, `SkillMetadataResponse`); every new route is new surface,
+not a change to an existing one; `FileAuditSink`'s printed output is
+byte-identical in shape to `StructuredLogAuditSink`'s. One broad but
+contained test-infrastructure fix was needed: `FileAuditSink` being a
+*real* file writer (unlike its print-only predecessor) meant every test
+fixture across the suite that constructs `Settings(...)` without
+mentioning `audit_dir` would otherwise share one real, unisolated
+`.local_registry/audit/` path relative to wherever pytest runs. Fixed
+with one global `autouse` fixture in `tests/conftest.py`
+(`_isolated_audit_dir`) that sets `JAAS_AUDIT_DIR` per test —
+pydantic-settings reads env vars for any `Settings(...)` field not
+explicitly passed as a constructor kwarg, so this isolates every
+existing fixture without editing each one individually.
+
+**What it improves:** Answers the specific governance fields regulators/
+enterprise buyers are already asking for (CSA Agentic Trust Framework;
+EU AI Act high-risk obligations from August 2026), and — going beyond the
+roadmap's literal scope — closes a real security-relevant audit-coverage
+gap (yank and sharing-grant changes were previously invisible to any
+audit trail at all) discovered while investigating this item, not
+silently left as-is.
+
+**Impacted areas (actual):** new `src/jaas_registry/artifact/governance.py`,
+`src/jaas_registry/common/audit_store.py`; modified `common/audit.py`
+(new event types), `common/config.py` (`audit_dir`), `index/models.py`
+(3 new `IndexEntry` fields), `index/bootstrap.py`/`index/consumer.py`
+(governance overlay), `storage/keys.py` (`governance_key`), `api/routes.py`
+(yank/share-grant audit emission, new governance route), `api/schemas.py`
+(`GovernanceUpdateRequest`/`GovernanceResponse`, 3 new
+`SkillMetadataResponse` fields), `api/tenant_routes.py` (audit-export
+route, `FileAuditSink` swap), `api/github_routes.py`/`api/release_routes.py`/
+`api/draft_routes.py`/`cli.py` (`FileAuditSink` swap), `tests/conftest.py`
+(global audit-dir isolation), `tests/integration/test_cli.py` (isolation
+fixture updated). New tests: `tests/unit/test_audit_events_yank_and_share.py`,
+`tests/unit/test_audit_store.py`, `tests/unit/test_artifact_governance.py`,
+`tests/integration/test_audit_trail.py`, `tests/integration/test_governance_endpoint.py`,
+`tests/integration/test_audit_export_endpoint.py`. 758 → 786 backend
+tests passing; ruff clean; no new mypy errors.
 
 ### 3.4 — Ship the missing UI surfaces · `jaas-ui`
 

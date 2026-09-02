@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 
+from jaas_registry.artifact.governance import apply_governance, read_governance
 from jaas_registry.artifact.yank import apply_status, read_status
 from jaas_registry.index.ingest import parse_published_record
 from jaas_registry.index.store import InMemoryIndex
@@ -22,7 +23,8 @@ def bootstrap_index(store: ObjectStore) -> InMemoryIndex:
     is observed against the design.md §9.1.4 cold-start SLO (<= 120s).
 
     Also re-reads each entry's status sidecar (artifact/yank.py) — a yank
-    must survive a cold-start restart exactly like the publish it modifies."""
+    must survive a cold-start restart exactly like the publish it modifies
+    — and its governance sidecar (artifact/governance.py), same reasoning."""
     start = time.monotonic()
     index = InMemoryIndex()
     for key in store.list_prefix(TAG_PREFIX):
@@ -30,6 +32,7 @@ def bootstrap_index(store: ObjectStore) -> InMemoryIndex:
             continue
         entry = parse_published_record(store.read(key))
         entry = apply_status(entry, read_status(store, skill_id=entry.id, version=entry.version))
+        entry = apply_governance(entry, read_governance(store, skill_id=entry.id))
         index.put(entry)
     index_build_duration_seconds.observe(time.monotonic() - start)
     return index

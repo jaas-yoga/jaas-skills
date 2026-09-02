@@ -54,6 +54,12 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path(".local_registry/artifacts")
     policy_dir: Path = Path(".local_registry/policy")
+    # common/audit_store.py::FileAuditSink — durable, queryable audit
+    # persistence (Phase 3.3), same file-backed convention as the two
+    # settings above. Distinct from storage_root: audit records aren't
+    # content-addressed artifacts, and from policy_dir: audit is an
+    # append-only log, not an entity store keyed for point lookups.
+    audit_dir: Path = Path(".local_registry/audit")
 
     storage_backend: Literal["local", "s3"] = "local"
     storage_s3_bucket: str | None = None

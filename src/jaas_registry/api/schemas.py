@@ -79,6 +79,13 @@ class SkillMetadataResponse(BaseModel):
     # metadata fetch always reflects the true status, even for a yanked
     # version that a search/latest resolution would now skip.
     status: str
+    # Phase 3.3 (CSA Agentic Trust Framework / EU AI Act governance
+    # surface) — None/[] means no governance record has been set yet for
+    # this skill, not "not applicable". "Owning team" is ownerUser/
+    # ownerTenant above, deliberately not duplicated here.
+    businessPurpose: str | None = None
+    systemsAccessed: list[str] = []
+    governanceReviewDate: str | None = None
 
 
 class CertificationSummaryResponse(BaseModel):
@@ -167,6 +174,21 @@ class YankResponse(BaseModel):
     reason: str | None = None
     actor: str
     at: str
+
+
+class GovernanceUpdateRequest(BaseModel):
+    businessPurpose: str | None = None
+    systemsAccessed: list[str] = []
+    reviewDate: str | None = None
+
+
+class GovernanceResponse(BaseModel):
+    id: str
+    businessPurpose: str | None = None
+    systemsAccessed: list[str] = []
+    reviewDate: str | None = None
+    updatedBy: str
+    updatedAt: str
 
 
 class ForkFromRequest(BaseModel):

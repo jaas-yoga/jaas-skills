@@ -42,7 +42,8 @@ from jaas_registry.authn.github_oauth_apps import GitHubOAuthAppStore
 from jaas_registry.authn.models import TenantRole
 from jaas_registry.authn.tenants import MembershipStore
 from jaas_registry.authz.base import Authorizer
-from jaas_registry.common.audit import StructuredLogAuditSink, new_github_connection_event
+from jaas_registry.common.audit import new_github_connection_event
+from jaas_registry.common.audit_store import FileAuditSink
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.sharing.access import CallerContext, resolve_caller_context
@@ -138,7 +139,7 @@ def put_github_oauth_app(
         client_secret=client_secret,
         configured_by=caller.user_id or "",
     )
-    StructuredLogAuditSink().emit_github_connection_change(
+    FileAuditSink(settings.audit_dir).emit_github_connection_change(
         new_github_connection_event(
             actor=caller.user_id or "",
             tenant_id=tenant_id,
@@ -175,7 +176,7 @@ def delete_github_oauth_app(
             ErrorCode.GITHUB_OAUTH_NOT_CONFIGURED,
             f"tenant '{tenant_id}' has no OAuth App configured",
         )
-    StructuredLogAuditSink().emit_github_connection_change(
+    FileAuditSink(settings.audit_dir).emit_github_connection_change(
         new_github_connection_event(
             actor=caller.user_id or "",
             tenant_id=tenant_id,
@@ -258,7 +259,7 @@ def delete_github_connection(
     if not found:
         raise JaasError(ErrorCode.GITHUB_NOT_CONNECTED, f"tenant '{tenant_id}' has no connection")
 
-    StructuredLogAuditSink().emit_github_connection_change(
+    FileAuditSink(settings.audit_dir).emit_github_connection_change(
         new_github_connection_event(
             actor=caller.user_id or "",
             tenant_id=tenant_id,
@@ -384,7 +385,7 @@ def github_callback(
         github_avatar_url=user.avatar_url,
         connected_by=oauth_state.user_id,
     )
-    StructuredLogAuditSink().emit_github_connection_change(
+    FileAuditSink(settings.audit_dir).emit_github_connection_change(
         new_github_connection_event(
             actor=oauth_state.user_id,
             tenant_id=oauth_state.tenant_id,

@@ -99,3 +99,13 @@ class IndexEntry:
     # preserves every pre-existing call site (tests, fixtures, a tag
     # written before this field existed) as ACTIVE.
     status: ArtifactStatus = ArtifactStatus.ACTIVE
+    # Phase 3.3 (CSA Agentic Trust Framework / EU AI Act governance
+    # surface): overlaid post-hoc from the governance.json sidecar
+    # (artifact/governance.py), same "never in the manifest record itself"
+    # pattern as status above — but keyed by skill_id only, so identical
+    # across every version of one skill rather than per-version. "Owning
+    # team" deliberately reuses owner_team above instead of duplicating
+    # it here — see IMPLEMENTATION_PLAN.md Phase 3.3.
+    business_purpose: str | None = None
+    systems_accessed: tuple[str, ...] = ()
+    governance_review_date: str | None = None

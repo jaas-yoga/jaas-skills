@@ -258,7 +258,7 @@ def cmd_publish(
     from jaas_registry.artifact.publish import load_source_documents, publish_skill
     from jaas_registry.artifact.signing import load_or_create_keypair
     from jaas_registry.artifact.trust import ensure_key_registered, load_trust_policy
-    from jaas_registry.common.audit import StructuredLogAuditSink
+    from jaas_registry.common.audit_store import FileAuditSink
     from jaas_registry.common.config import load_settings
     from jaas_registry.guardrails.client import HttpGuardrailsClient
     from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
@@ -307,7 +307,7 @@ def cmd_publish(
                 signing_key=keypair,
                 trust_policy=trust_policy,
                 actor=args.actor or getpass.getuser(),
-                audit_sink=StructuredLogAuditSink(),
+                audit_sink=FileAuditSink(settings.audit_dir),
                 guardrails_client=guardrails_client,
                 guardrail_policy=GuardrailPolicy(
                     tenant_id="local", enabled_check_ids=enabled_ids

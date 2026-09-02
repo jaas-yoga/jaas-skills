@@ -52,7 +52,7 @@ from jaas_registry.artifact.trust import ensure_key_registered, load_trust_polic
 from jaas_registry.authn.github_client import GitHubApiClient
 from jaas_registry.authn.github_connections import GitHubConnectionStore
 from jaas_registry.authn.repo_links import RepoLinkStore
-from jaas_registry.common.audit import StructuredLogAuditSink
+from jaas_registry.common.audit_store import FileAuditSink
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.drafts import git_sync
@@ -794,7 +794,7 @@ def publish_draft(
                 signing_key=keypair,
                 trust_policy=fresh_trust_policy,
                 actor=caller.user_id or "",
-                audit_sink=StructuredLogAuditSink(),
+                audit_sink=FileAuditSink(settings.audit_dir),
                 owner_user=caller.user_id,
                 owner_tenant=caller.tenant_id,
                 visibility=visibility,

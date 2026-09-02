@@ -26,6 +26,8 @@ from jaas_registry.api.schemas import (
     ArtifactTokenResponse,
     CreateShareGrantRequest,
     FileContentResponse,
+    GovernanceResponse,
+    GovernanceUpdateRequest,
     OwnerResponse,
     PageMeta,
     ResolvedDependency,
@@ -38,12 +40,19 @@ from jaas_registry.api.schemas import (
     YankRequest,
     YankResponse,
 )
+from jaas_registry.artifact.governance import (
+    GovernanceRecord,
+    apply_governance,
+    write_governance,
+)
 from jaas_registry.artifact.packaging import extract_archive
 from jaas_registry.artifact.sigstore_trust import load_sigstore_trust_policy
 from jaas_registry.artifact.verify import verify_artifact
 from jaas_registry.artifact.yank import YankRecord, write_status
 from jaas_registry.authn.tenants import MembershipStore
 from jaas_registry.authz.base import Authorizer
+from jaas_registry.common.audit import new_share_grant_event, new_yank_event
+from jaas_registry.common.audit_store import FileAuditSink
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.drafts.git_sync import parse_github_repo_url
@@ -196,6 +205,9 @@ def get_skill_metadata(
         guardrailLevelStatuses=list(entry.guardrail_level_statuses),
         guardrailWarningCheckIds=list(entry.guardrail_warning_check_ids),
         status=entry.status.value,
+        businessPurpose=entry.business_purpose,
+        systemsAccessed=list(entry.systems_accessed),
+        governanceReviewDate=entry.governance_review_date,
     )
 
 
@@ -571,6 +583,19 @@ def create_share(
         permission=permission,
         granted_by=caller.user_id or "",
     )
+    # IMPLEMENTATION_PLAN.md Phase 3.3: sharing-grant changes were the other
+    # security-relevant action left unaudited since Phase 1.3.
+    FileAuditSink(settings.audit_dir).emit_share_grant_change(
+        new_share_grant_event(
+            actor=caller.user_id or "",
+            skill_id=skill_id,
+            grant_id=grant.id,
+            grantee_type=grant.grantee_type.value,
+            grantee_id=grant.grantee_id,
+            permission=grant.permission.value,
+            action="granted",
+        )
+    )
     return _grant_to_response(grant)
 
 
@@ -595,7 +620,25 @@ def revoke_share(
         credentials=credentials,
         x_tenant_id=x_tenant_id,
     )
+    # Fetched before revoke() deletes the grant file — need its details for
+    # the audit record below.
+    existing = grants.get(skill_id=skill_id, grant_id=grant_id)
     grants.revoke(skill_id=skill_id, grant_id=grant_id)
+    if existing is not None:
+        caller = resolve_caller_context(
+            credentials.credentials if credentials else None, settings=settings
+        )
+        FileAuditSink(settings.audit_dir).emit_share_grant_change(
+            new_share_grant_event(
+                actor=caller.user_id or "",
+                skill_id=skill_id,
+                grant_id=grant_id,
+                grantee_type=existing.grantee_type.value,
+                grantee_id=existing.grantee_id,
+                permission=existing.permission.value,
+                action="revoked",
+            )
+        )
     return Response(status_code=204)
 
 
@@ -641,6 +684,19 @@ def _set_version_status(
     )
     write_status(store, skill_id=skill_id, version=version, record=record)
     index.put(dataclasses.replace(entry, status=status))
+    # IMPLEMENTATION_PLAN.md Phase 3.3: yank/unyank is a security-relevant
+    # state change that Phase 1.3 left unaudited — closes that gap. Fresh
+    # sink instance per call, same convention as tenant_routes.py/
+    # github_routes.py's existing audit call sites.
+    FileAuditSink(settings.audit_dir).emit_yank(
+        new_yank_event(
+            actor=caller.user_id or "",
+            skill_id=skill_id,
+            version=version,
+            action="yanked" if status == ArtifactStatus.YANKED else "unyanked",
+            reason=reason,
+        )
+    )
     return _yank_response(skill_id, version, record)
 
 
@@ -754,3 +810,58 @@ def download_artifact(
         )
 
     return Response(content=archive_bytes, media_type="application/x-tar")
+
+
+@router.put("/skills/{skill_id}/governance", response_model=GovernanceResponse)
+def put_skill_governance(
+    skill_id: str,
+    body: GovernanceUpdateRequest,
+    index: IndexDep,
+    store: StoreDep,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    memberships: MembershipStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+    x_tenant_id: Annotated[str | None, Header()] = None,
+) -> GovernanceResponse:
+    """IMPLEMENTATION_PLAN.md Phase 3.3: set/update this skill's governance
+    record (business purpose, systems accessed, review date) — a distinct
+    permission scope from skills:write/skills:share, since this is a
+    compliance concern, not a publish or sharing action. Same owner-or-
+    tenant-admin authorization tier as yank/shares. Unlike yank (per-
+    version), this overlays onto *every* published version of the skill —
+    see artifact/governance.py's module docstring for why."""
+    _require_share_management_access(
+        index=index,
+        skill_id=skill_id,
+        settings=settings,
+        authorizer=authorizer,
+        memberships=memberships,
+        credentials=credentials,
+        x_tenant_id=x_tenant_id,
+        required_permissions=("skills:governance",),
+    )
+    caller = resolve_caller_context(
+        credentials.credentials if credentials else None, settings=settings
+    )
+    record = GovernanceRecord(
+        business_purpose=body.businessPurpose,
+        systems_accessed=tuple(body.systemsAccessed),
+        review_date=body.reviewDate,
+        updated_by=caller.user_id or "",
+        updated_at=datetime.now(UTC).isoformat(),
+    )
+    write_governance(store, skill_id=skill_id, record=record)
+    for version in index.list_versions(skill_id):
+        entry = index.get(skill_id, version)
+        if entry is not None:
+            index.put(apply_governance(entry, record))
+
+    return GovernanceResponse(
+        id=skill_id,
+        businessPurpose=record.business_purpose,
+        systemsAccessed=list(record.systems_accessed),
+        reviewDate=record.review_date,
+        updatedBy=record.updated_by,
+        updatedAt=record.updated_at,
+    )

@@ -47,7 +47,7 @@ from jaas_registry.artifact.sigstore_trust import load_sigstore_trust_policy
 from jaas_registry.artifact.trust import ensure_key_registered, load_trust_policy
 from jaas_registry.authn.ci_credentials import GitHubOidcVerifier, resolve_release_tenant
 from jaas_registry.authn.repo_links import RepoLinkStore
-from jaas_registry.common.audit import StructuredLogAuditSink
+from jaas_registry.common.audit_store import FileAuditSink
 from jaas_registry.common.config import Settings
 from jaas_registry.common.errors import ErrorCode, JaasError
 from jaas_registry.guardrails.certification import flatten_certification
@@ -279,7 +279,7 @@ def release_skill(
                 external_signature=body.sigstoreBundle,
                 sigstore_trust_policy=sigstore_trust_policy,
                 actor=provenance["source_repo"] or "ci",
-                audit_sink=StructuredLogAuditSink(),
+                audit_sink=FileAuditSink(settings.audit_dir),
                 owner_user=owner_user,
                 owner_tenant=tenant_id,
                 guardrails_client=guardrails_client,

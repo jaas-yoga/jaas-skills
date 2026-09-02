@@ -85,6 +85,11 @@ def seed_demo_skills(
                 signing_key=signing_key,
                 trust_policy=trust_policy,
                 actor=_SEED_ACTOR,
+                # Deliberately NOT FileAuditSink (common/audit_store.py) —
+                # this seed data is synthetic and runs on every fresh
+                # checkout/restart; persisting it into the durable audit
+                # trail would pollute a real Phase 3.3 audit export with
+                # fake "who did what" records. print-only is correct here.
                 audit_sink=StructuredLogAuditSink(),
                 owner_user=owner_user,
                 owner_tenant=owner_tenant,

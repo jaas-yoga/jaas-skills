@@ -113,6 +113,72 @@ def new_github_connection_event(
     )
 
 
+@dataclass(frozen=True)
+class YankAuditEvent:
+    """IMPLEMENTATION_PLAN.md Phase 3.3: yank/unyank changes what versions
+    are resolvable/installable without touching the immutable manifest —
+    a security-relevant state change that Phase 1.3 left unaudited. Same
+    audit posture as a custom guardrail rule edit."""
+
+    actor: str
+    skill_id: str
+    version: str
+    action: str  # "yanked" | "unyanked"
+    reason: str | None
+    timestamp: str
+
+
+def new_yank_event(
+    *, actor: str, skill_id: str, version: str, action: str, reason: str | None
+) -> YankAuditEvent:
+    return YankAuditEvent(
+        actor=actor,
+        skill_id=skill_id,
+        version=version,
+        action=action,
+        reason=reason,
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+
+
+@dataclass(frozen=True)
+class ShareGrantAuditEvent:
+    """IMPLEMENTATION_PLAN.md Phase 3.3: granting/revoking access to a
+    skill is the other security-relevant action Phase 1.3-era code left
+    unaudited alongside yank."""
+
+    actor: str
+    skill_id: str
+    grant_id: str
+    grantee_type: str
+    grantee_id: str
+    permission: str
+    action: str  # "granted" | "revoked"
+    timestamp: str
+
+
+def new_share_grant_event(
+    *,
+    actor: str,
+    skill_id: str,
+    grant_id: str,
+    grantee_type: str,
+    grantee_id: str,
+    permission: str,
+    action: str,
+) -> ShareGrantAuditEvent:
+    return ShareGrantAuditEvent(
+        actor=actor,
+        skill_id=skill_id,
+        grant_id=grant_id,
+        grantee_type=grantee_type,
+        grantee_id=grantee_id,
+        permission=permission,
+        action=action,
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+
+
 class AuditSink(Protocol):
     def emit(self, event: PublishAuditEvent) -> None: ...
 
@@ -120,12 +186,18 @@ class AuditSink(Protocol):
 
     def emit_github_connection_change(self, event: GitHubConnectionAuditEvent) -> None: ...
 
+    def emit_yank(self, event: YankAuditEvent) -> None: ...
+
+    def emit_share_grant_change(self, event: ShareGrantAuditEvent) -> None: ...
+
 
 class InMemoryAuditSink:
     def __init__(self) -> None:
         self.events: list[PublishAuditEvent] = []
         self.custom_guardrail_events: list[CustomGuardrailRuleAuditEvent] = []
         self.github_connection_events: list[GitHubConnectionAuditEvent] = []
+        self.yank_events: list[YankAuditEvent] = []
+        self.share_grant_events: list[ShareGrantAuditEvent] = []
 
     def emit(self, event: PublishAuditEvent) -> None:
         self.events.append(event)
@@ -135,6 +207,12 @@ class InMemoryAuditSink:
 
     def emit_github_connection_change(self, event: GitHubConnectionAuditEvent) -> None:
         self.github_connection_events.append(event)
+
+    def emit_yank(self, event: YankAuditEvent) -> None:
+        self.yank_events.append(event)
+
+    def emit_share_grant_change(self, event: ShareGrantAuditEvent) -> None:
+        self.share_grant_events.append(event)
 
 
 class StructuredLogAuditSink:
@@ -146,3 +224,9 @@ class StructuredLogAuditSink:
 
     def emit_github_connection_change(self, event: GitHubConnectionAuditEvent) -> None:
         print(json.dumps({"event_type": "github_connection_change", **asdict(event)}))
+
+    def emit_yank(self, event: YankAuditEvent) -> None:
+        print(json.dumps({"event_type": "yank", **asdict(event)}))
+
+    def emit_share_grant_change(self, event: ShareGrantAuditEvent) -> None:
+        print(json.dumps({"event_type": "share_grant_change", **asdict(event)}))
