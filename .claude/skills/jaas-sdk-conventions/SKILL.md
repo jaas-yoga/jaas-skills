@@ -21,7 +21,11 @@ any SDK package alone never pulls in FastAPI/boto3/sigstore/etc.
 dev && uv run pytest -q`. Each has its own `.venv` — don't expect the root
 repo's `uv run pytest` to see or run these tests, and vice versa
 (`testpaths` in the root `pyproject.toml` is `["tests"]`, which doesn't
-reach `sdks/`).
+reach `sdks/`). `.github/workflows/ci.yml`'s `sdk-lint-test` job runs
+`ruff check .` + `pytest -q` for all four packages (a matrix job, one leg
+per package) on every push/PR — added in the same change as these
+packages, don't assume it doesn't exist just because the root
+`lint-test-audit` job predates it and only covers `src/jaas_registry`.
 
 ## `jaas-client` — the shared core
 

@@ -19,3 +19,23 @@ jobs:
         run: uv run pytest -q
       - name: Dependency scan
         run: uv run pip-audit
+
+  sdk-lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [jaas-client, jaas-langgraph, jaas-crewai, jaas-autogen]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - name: Sync
+        working-directory: sdks/${{ matrix.package }}
+        run: uv sync --extra dev
+      - name: Lint
+        working-directory: sdks/${{ matrix.package }}
+        run: uv run ruff check .
+      - name: Tests
+        working-directory: sdks/${{ matrix.package }}
+        run: uv run pytest -q
