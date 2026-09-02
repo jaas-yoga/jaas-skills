@@ -1043,6 +1043,10 @@ clean. Both repos' `SKILL.md` conventions files updated.
 
 ## Phase 4 — Scale the ecosystem (6–12 months)
 
+**Status:** 4.4 done this session (2026-09-02) — see below. 4.1, 4.2, 4.3,
+4.5 not started; each needs its own dedicated Explore→Plan pass before
+coding (4.2 and 4.3 explicitly so, per their sections below).
+
 ### 4.1 — Framework SDKs (LangGraph, CrewAI, AutoGen) · new packages
 **What:** Thin client packages wrapping the existing registry REST API per
 each framework's tool/plugin conventions.
@@ -1080,19 +1084,92 @@ cross-registry dependencies.
 **Impacted areas:** `index/`, `artifact/trust.py` (extends Phase 1.2's
 work), new federation-specific API surface.
 
-### 4.4 — Load-test to the stated 50,000-package target · `jaas-registry`
-**What:** Extends current performance tests (validated at a 2,000-skill
-corpus only) to the design doc's stated 50,000-package/12-month capacity
-target.
-**Breaking-change risk:** None by itself (it's testing, not a feature) —
-but findings from it may force changes elsewhere (e.g. the index's
-in-memory model, `InMemoryIndex`, may not hold 50k entries comfortably;
-this could feed back into needing a real index backend, which isn't
-currently scoped anywhere on the roadmap).
-**Improves:** Validates (or disproves) the stated scale target before
-customers hit it in production.
-**Impacted areas:** test infrastructure only, until/unless it surfaces a
-real scaling gap.
+### 4.4 — Load-test to the stated 50,000-package target · `jaas-registry` — ✅ DONE (2026-09-02)
+
+**What we tested, and what we found — the target holds for the pieces that
+carry real per-request cost; one real, previously-undocumented
+architectural risk was found and is flagged, not fixed, below:**
+
+- **`index/query.py::search()` at a real (not extrapolated) 50,000-entry
+  corpus** — measured directly, isolating the algorithm itself from
+  HTTP/tracing/concurrency overhead (those are already covered at 2,000
+  entries by `tests/performance/test_load.py`): query-matched search
+  ~60-100ms, query-less browse ~85-130ms, both comfortably inside
+  design.md §9.1's 160ms p95 budget. **The 50k target holds** — the
+  roadmap's own worry ("the in-memory model may not hold 50k entries
+  comfortably") turned out not to be the case for the search algorithm
+  itself, contrary to what reading `query.py`'s O(n)-unindexed-scan
+  in isolation would suggest.
+- **`bootstrap_index()` at a real 50,000-entry corpus** — `tests/
+  performance/test_bootstrap_load.py` already asserted this via
+  extrapolation from a 5,000-skill sample; this investigation actually ran
+  the full 50,000 for real once to check the extrapolation's honesty:
+  ~16.6s, matching the extrapolated prediction closely and landing
+  comfortably inside the 120s budget (design.md §9.1.4). The extrapolation
+  approach that file already used is confirmed sound, not just assumed so.
+- **`index/usage.py::flush_usage_counts()` (Phase 3.1) at 50,000 tracked
+  skills** — a full read-modify-write of `usage_counts.json` on every
+  flush (not append-only). Measured directly: ~10-14ms per flush at 50k,
+  negligible against the default 60s flush interval. Holds fine.
+- **One real, new finding: `index/reconciliation.py::reconcile()` under
+  concurrent request load, at 50,000 entries.** `common/config.py`'s
+  `background_index_reconciliation` flag (**default: on**, every 300s)
+  explicitly deferred this exact question to this item ("revisit the
+  default once the roadmap's 50k-package scale target is load-tested").
+  `reconcile()` alone, uncontended, is linear and fine (~16s at 50k,
+  comfortably inside the 300s interval — `tests/performance/
+  test_reconcile_at_target_scale.py` asserts this, extrapolated from a
+  5,000-skill sample the same way bootstrap's test does). But `api/
+  app.py` runs it via `asyncio.to_thread` specifically so it doesn't block
+  the event loop — that keeps requests being *accepted*, but reconcile's
+  ~16s of CPU-bound work (parsing/validating every stored record, then
+  hashing every entry twice for the before/after checksum) still competes
+  for the GIL with concurrent request-handling threads. An ad hoc manual
+  measurement during this investigation ran concurrent `search()` calls
+  alongside one 50k-scale `reconcile()` call: wall-clock went from ~16s
+  (reconcile alone) to **over 3.5 minutes** before being deliberately
+  stopped — a severe, order-of-magnitude degradation to concurrent
+  request latency for the duration of every reconcile cycle, not machine
+  noise. **This is real production-relevant risk at 50k scale with
+  today's default settings, and it is not fixed here** — reproducing it as
+  a stable, fast-enough-for-CI automated regression test, and deciding on
+  a fix (raise the interval default; move reconciliation off the GIL
+  entirely via multiprocessing; make it incremental instead of a full
+  rescan; something else), is flagged as a follow-up decision, not
+  something this load-testing item should resolve unilaterally.
+- **Also newly noted, out of this item's corpus-size axis (a
+  grant-count/tenant-count axis instead, already flagged as a known risk
+  by Phase 3.2's own investigation):** `sharing/grants.py::list_for_grantee`
+  is a full glob-scan of every grant file — untouched here, not a
+  size-of-catalog concern.
+
+**Small, safe, in-scope fix shipped alongside the finding above:**
+`index/store.py::InMemoryIndex.all_ids()` re-sorted the full id set on
+every call — a real, avoidable `O(n log n)` cost paid on every single
+`search()` request even though the id set only changes on `put()`. Now
+cached, invalidated on `put()`, returning a fresh copy each call (so a
+caller mutating the returned list can't corrupt the cache). Verified this
+doesn't change any observable ordering/behavior (`tests/unit/
+test_index_store.py`'s existing + two new invariant tests) — a genuinely
+minor win at measured 50k scale (the id-sort was never the dominant cost;
+the per-candidate scan and final score-sort dominate), kept because it's
+free and correct, not because it moved the needle much on its own.
+
+**Breaking-change risk:** None realized — testing only; the `all_ids()`
+caching change is behavior-preserving (verified).
+**Improves:** Validates the 50k target holds for search/bootstrap/usage-
+flush; surfaces a real, previously-undocumented reconciliation risk at
+that scale before it would have been found in production.
+**Impacted areas (actual):** new `tests/performance/
+test_search_at_target_scale.py`, `tests/performance/
+test_reconcile_at_target_scale.py`; `index/store.py` (`all_ids()`
+caching); `tests/unit/test_index_store.py` (2 new invariant tests). 817 →
+821 backend tests passing; ruff clean; no new mypy errors.
+**Follow-up decision needed (not resolved here):** how to mitigate the
+reconcile-vs-concurrent-request GIL contention at 50k scale — raised with
+the user rather than picked unilaterally, since it's a real production
+default (`background_index_reconciliation=True`) with a genuine
+availability/latency trade-off either way.
 
 ### 4.5 — Abuse workflow & re-certification sweep · `jaas-registry`
 **What:** Certification is point-in-time by design (the same principle

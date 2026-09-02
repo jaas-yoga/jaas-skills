@@ -569,6 +569,47 @@ purpose:
   real usage data exists yet to calibrate against. Fine to retune once
   it does; don't treat either as load-bearing precision.
 
+## 50,000-package scale target (Phase 4.4) — what actually holds, what doesn't
+
+- **Don't assume `index/query.py::search()`'s O(n) unindexed candidate scan
+  is a problem at 50k just because it's unindexed.** Measured directly
+  (`tests/performance/test_search_at_target_scale.py`, isolating the
+  algorithm from HTTP/tracing overhead): ~60-130ms per call at a real
+  50,000-entry corpus, comfortably inside design.md §9.1's 160ms p95
+  budget. Reading the loop and assuming it won't scale would have been
+  wrong — measure before redesigning. `bootstrap_index()` and `index/
+  usage.py::flush_usage_counts()` were checked the same way and also hold
+  fine at 50k (see IMPLEMENTATION_PLAN.md Phase 4.4 for the numbers).
+- **The one thing that genuinely doesn't hold at 50k: `reconcile()`
+  running concurrently with request traffic.** `reconcile()` itself is
+  linear and fine alone (~16s at 50k, inside the 300s default interval —
+  `tests/performance/test_reconcile_at_target_scale.py`). But `api/
+  app.py` runs it via `asyncio.to_thread`, and its ~16s of CPU-bound work
+  (full `bootstrap_index()` re-parse + double full-corpus checksum hash)
+  contends for the GIL with concurrent request-handling threads. Manually
+  measured: concurrent `search()` calls during one 50k-scale `reconcile()`
+  pushed wall-clock past 3.5 minutes (vs. ~16s uncontended) before the
+  probe was stopped — a severe, real degradation to concurrent request
+  latency for the duration of every cycle, not noise. **Not fixed** —
+  `background_index_reconciliation` still defaults to `True` at 300s in
+  `common/config.py`. If you're touching reconciliation, background
+  tasks, or anything else that runs meaningful CPU-bound work via
+  `asyncio.to_thread` in this app, know that "runs in a thread so it
+  won't block the event loop" is true for *accepting new requests* but
+  does **not** mean it won't degrade the *latency* of concurrently-running
+  request-handling code — those threads still fight over one GIL.
+- **`InMemoryIndex.all_ids()` (`index/store.py`) now caches its sorted
+  result, invalidated on `put()`, returning a fresh `list()` copy per call
+  (not the cached list itself — a caller mutating what they got back must
+  not corrupt the cache).** A genuinely minor win in practice — the id
+  sort was never the dominant per-request cost — kept because it's free
+  and behavior-preserving (see `tests/unit/test_index_store.py`'s
+  invariant tests), not because it moved the 50k numbers much on its own.
+  If you add another `InMemoryIndex` read method that's O(n) or worse and
+  gets called once per `search()` request, check whether the same
+  cache-invalidate-on-put shape applies before reaching for something
+  heavier.
+
 ## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
 
 - **Two signature kinds coexist permanently, not just during a
@@ -635,7 +676,12 @@ purpose:
   genuinely sensitive to host machine load (other processes, IDE language
   servers competing for CPU) — if it fails, re-run it in isolation
   (`uv run pytest tests/performance/test_load.py -q`) a few times before
-  concluding it's a real regression, not machine noise.
+  concluding it's a real regression, not machine noise. Same caveat now
+  applies to `tests/performance/test_search_at_target_scale.py::
+  test_browse_p95_latency_within_slo_at_50k_corpus` (Phase 4.4) — it has
+  real headroom in isolation (~85-130ms vs. a 160ms budget) but can tip
+  over at the tail of a full `pytest -q` run on loaded hardware; not
+  corpus-size-related, the same category as the pre-existing case above.
 - **`uv sync` alone does not install dev tooling.** `pytest`/`ruff`/etc. are
   declared under PEP 621 `[project.optional-dependencies].dev`, which plain
   `uv sync` skips. After adding any new dependency, run

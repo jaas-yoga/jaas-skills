@@ -14,11 +14,20 @@ from jaas_registry.index.semver_resolver import resolve_version
 class InMemoryIndex:
     def __init__(self) -> None:
         self._entries: dict[str, dict[str, IndexEntry]] = {}
+        # IMPLEMENTATION_PLAN.md Phase 4.4: query.py::search() calls all_ids()
+        # once per request and sorts the full id set every time -- at the
+        # roadmap's 50,000-package target that's a real, avoidable O(n log n)
+        # cost paid on every search, even though the id set only changes on
+        # put(). Invalidated (not incrementally maintained) on every put()
+        # rather than kept sorted-on-insert, since put() is far less
+        # frequent than all_ids() reads on the hot search path.
+        self._sorted_ids_cache: list[str] | None = None
 
     def put(self, entry: IndexEntry) -> None:
         """Idempotent upsert, keyed by id+version — used for both cold-start
         bootstrap and incremental event patches (design.md §3.2 notes 1-2)."""
         self._entries.setdefault(entry.id, {})[entry.version] = entry
+        self._sorted_ids_cache = None
 
     def get(self, skill_id: str, version: str) -> IndexEntry | None:
         return self._entries.get(skill_id, {}).get(version)
@@ -46,4 +55,8 @@ class InMemoryIndex:
         return sorted(self._entries.get(skill_id, {}))
 
     def all_ids(self) -> list[str]:
-        return sorted(self._entries)
+        if self._sorted_ids_cache is None:
+            self._sorted_ids_cache = sorted(self._entries)
+        # A fresh copy, not the cached list itself -- a caller mutating what
+        # they got back must not corrupt what the next call returns.
+        return list(self._sorted_ids_cache)

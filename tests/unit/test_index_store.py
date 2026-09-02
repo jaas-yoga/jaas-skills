@@ -47,6 +47,28 @@ def test_all_ids_sorted():
     assert index.all_ids() == ["aaa.a.b", "zzz.a.b"]
 
 
+def test_all_ids_reflects_a_put_after_an_earlier_call():
+    """IMPLEMENTATION_PLAN.md Phase 4.4: all_ids() sorts on every call today
+    (O(n log n) per search() request, see index/query.py); caching that sort
+    must not let a later put() go unseen by a caller who already called
+    all_ids() once."""
+    index = InMemoryIndex()
+    index.put(make_entry(id="aaa.a.b", version="1.0.0"))
+    assert index.all_ids() == ["aaa.a.b"]
+    index.put(make_entry(id="bbb.a.b", version="1.0.0"))
+    assert index.all_ids() == ["aaa.a.b", "bbb.a.b"]
+
+
+def test_all_ids_result_is_not_aliased_across_calls():
+    """A caller mutating the list returned by one call must not affect what
+    a later call returns."""
+    index = InMemoryIndex()
+    index.put(make_entry(id="aaa.a.b", version="1.0.0"))
+    first = index.all_ids()
+    first.append("mutated.in.place")
+    assert index.all_ids() == ["aaa.a.b"]
+
+
 def test_get_resolved_skips_a_yanked_latest_version():
     index = InMemoryIndex()
     index.put(make_entry(version="1.0.0", status=ArtifactStatus.ACTIVE))
