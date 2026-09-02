@@ -27,9 +27,20 @@ from jaas_registry.api.schemas import (
     TenantMembershipResponse,
     UserResponse,
 )
+from jaas_registry.authn.models import User
 from jaas_registry.authn.service import AuthResult, AuthService
 
 router = APIRouter(prefix="/api/v1/auth")
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.effective_name,
+        pictureUrl=user.picture,
+        displayName=user.display_name,
+    )
 
 
 def _build_service(
@@ -84,12 +95,7 @@ def sign_in_with_google(
     return AuthResponse(
         accessToken=result.access_token,
         refreshToken=result.refresh_token,
-        user=UserResponse(
-            id=result.user.id,
-            email=result.user.email,
-            name=result.user.name,
-            pictureUrl=result.user.picture,
-        ),
+        user=_user_response(result.user),
         tenants=_tenant_list(result),
         activeTenantId=result.active_tenant_id,
     )
@@ -121,12 +127,7 @@ def sign_in_with_dev_credentials(
     return AuthResponse(
         accessToken=result.access_token,
         refreshToken=result.refresh_token,
-        user=UserResponse(
-            id=result.user.id,
-            email=result.user.email,
-            name=result.user.name,
-            pictureUrl=result.user.picture,
-        ),
+        user=_user_response(result.user),
         tenants=_tenant_list(result),
         activeTenantId=result.active_tenant_id,
     )

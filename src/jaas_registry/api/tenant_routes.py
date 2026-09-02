@@ -119,7 +119,10 @@ def list_members(
             continue  # pragma: no cover - defensive; membership always created for a real user
         members.append(
             MemberResponse(
-                userId=user.id, email=user.email, name=user.name, role=membership.role.value
+                userId=user.id,
+                email=user.email,
+                name=user.effective_name,
+                role=membership.role.value,
             )
         )
     return members

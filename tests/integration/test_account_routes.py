@@ -161,6 +161,69 @@ class TestListAndRevoke:
         assert resp.status_code == 404
 
 
+class TestUpdateProfile:
+    def test_sets_display_name(self, client):
+        session_token = _sign_in(client)
+
+        resp = client.patch(
+            "/api/v1/account/profile",
+            json={"displayName": "Ali"},
+            headers=_auth(session_token),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "Ali"
+        assert body["displayName"] == "Ali"
+
+    def test_blank_display_name_resets_to_google_name(self, client):
+        session_token = _sign_in(client)
+        client.patch(
+            "/api/v1/account/profile",
+            json={"displayName": "Ali"},
+            headers=_auth(session_token),
+        )
+
+        resp = client.patch(
+            "/api/v1/account/profile",
+            json={"displayName": "   "},
+            headers=_auth(session_token),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "Alice"
+        assert body["displayName"] is None
+
+    def test_persists_across_sign_ins(self, client):
+        session_token = _sign_in(client)
+        client.patch(
+            "/api/v1/account/profile",
+            json={"displayName": "Ali"},
+            headers=_auth(session_token),
+        )
+
+        resp = client.post("/api/v1/auth/google", json={"idToken": "alice-token"})
+
+        assert resp.status_code == 200
+        assert resp.json()["user"]["name"] == "Ali"
+        assert resp.json()["user"]["displayName"] == "Ali"
+
+    def test_token_with_no_backing_user_record_is_rejected(self, client):
+        token = make_token(subject="usr_never_signed_in", scopes=("skills:write",))
+
+        resp = client.patch(
+            "/api/v1/account/profile", json={"displayName": "x"}, headers=_auth(token)
+        )
+
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "UNAUTHORIZED"
+
+    def test_requires_auth(self, client):
+        resp = client.patch("/api/v1/account/profile", json={"displayName": "x"})
+        assert resp.status_code == 403
+
+
 def make_other_user_session_token(client: TestClient) -> str:
     # Re-uses the app's dependency override, which only knows "alice-token" —
     # add a second identity so this test has a genuinely different user.

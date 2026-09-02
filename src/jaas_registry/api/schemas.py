@@ -125,6 +125,14 @@ class UserResponse(BaseModel):
     email: str
     name: str
     pictureUrl: str | None = None
+    # The raw override value itself (None = using the Google name shown
+    # above in `name`) — lets the profile-editing UI prefill its input and
+    # know whether a "reset to Google name" action makes sense to show.
+    displayName: str | None = None
+
+
+class UpdateDisplayNameRequest(BaseModel):
+    displayName: str | None = None
 
 
 class TenantMembershipResponse(BaseModel):

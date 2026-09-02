@@ -17,6 +17,7 @@ from jaas_registry.api.errors import register_error_handlers
 from jaas_registry.api.github_routes import router as github_router
 from jaas_registry.api.guardrail_routes import router as guardrail_router
 from jaas_registry.api.middleware import ObservabilityMiddleware
+from jaas_registry.api.profile_routes import router as profile_router
 from jaas_registry.api.release_routes import router as release_router
 from jaas_registry.api.routes import router
 from jaas_registry.api.tenant_routes import router as tenant_router
@@ -184,5 +185,6 @@ def create_app(
     app.include_router(release_router)
     app.include_router(github_router)
     app.include_router(account_router)
+    app.include_router(profile_router)
     app.include_router(observability_routes.router)
     return app

@@ -56,13 +56,35 @@ class UserStore:
         """Creates the user on first sign-in; on every later sign-in,
         refreshes name/picture/email from the latest Google profile (a
         user's display name or avatar can change) while keeping the same
-        stable id."""
+        stable id. `display_name` (a local override, set only via
+        `set_display_name`) is preserved across this refresh — Google
+        sign-in never touches it."""
+        existing = self.get(derive_user_id(google_sub))
         user = User(
             id=derive_user_id(google_sub),
             google_sub=google_sub,
             email=email,
             name=name,
             picture=picture,
+            display_name=existing.display_name if existing else None,
         )
         self._path(user.id).write_text(json.dumps(asdict(user)))
         return user
+
+    def set_display_name(self, user_id: str, display_name: str | None) -> User | None:
+        """Sets (or, with None, clears) the caller's own display-name
+        override. Returns None if user_id doesn't resolve to a real user —
+        callers decide how to surface that (account_routes.py raises)."""
+        existing = self.get(user_id)
+        if existing is None:
+            return None
+        updated = User(
+            id=existing.id,
+            google_sub=existing.google_sub,
+            email=existing.email,
+            name=existing.name,
+            picture=existing.picture,
+            display_name=display_name,
+        )
+        self._path(updated.id).write_text(json.dumps(asdict(updated)))
+        return updated

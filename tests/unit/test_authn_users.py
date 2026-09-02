@@ -51,3 +51,53 @@ def test_different_google_subs_never_collide(tmp_path):
 def test_get_unknown_user_returns_none(tmp_path):
     store = UserStore(tmp_path)
     assert store.get("usr_does_not_exist") is None
+
+
+def test_set_display_name_overrides_effective_name(tmp_path):
+    store = UserStore(tmp_path)
+    created = store.find_or_create(
+        google_sub="sub-1", email="a@example.com", name="Alice", picture=None
+    )
+    assert created.effective_name == "Alice"
+
+    updated = store.set_display_name(created.id, "Ali")
+
+    assert updated is not None
+    assert updated.display_name == "Ali"
+    assert updated.effective_name == "Ali"
+    assert store.get(created.id).effective_name == "Ali"
+
+
+def test_set_display_name_none_resets_to_google_name(tmp_path):
+    store = UserStore(tmp_path)
+    created = store.find_or_create(
+        google_sub="sub-1", email="a@example.com", name="Alice", picture=None
+    )
+    store.set_display_name(created.id, "Ali")
+
+    reset = store.set_display_name(created.id, None)
+
+    assert reset is not None
+    assert reset.display_name is None
+    assert reset.effective_name == "Alice"
+
+
+def test_set_display_name_for_unknown_user_returns_none(tmp_path):
+    store = UserStore(tmp_path)
+    assert store.set_display_name("usr_does_not_exist", "Someone") is None
+
+
+def test_find_or_create_preserves_display_name_override_across_sign_ins(tmp_path):
+    store = UserStore(tmp_path)
+    created = store.find_or_create(
+        google_sub="sub-1", email="a@example.com", name="Alice", picture=None
+    )
+    store.set_display_name(created.id, "Ali")
+
+    refreshed = store.find_or_create(
+        google_sub="sub-1", email="a@example.com", name="Alice Smith", picture="http://x/new.png"
+    )
+
+    assert refreshed.name == "Alice Smith"
+    assert refreshed.display_name == "Ali"
+    assert refreshed.effective_name == "Ali"

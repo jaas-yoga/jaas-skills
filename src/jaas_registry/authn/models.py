@@ -28,6 +28,15 @@ class User:
     email: str
     name: str
     picture: str | None = None
+    # User-set override of `name`, shown everywhere in place of it once set.
+    # Unlike `name`/`picture` (refreshed from Google on every sign-in,
+    # `users.py::find_or_create`), this is never touched by sign-in — only
+    # `users.py::set_display_name` changes it.
+    display_name: str | None = None
+
+    @property
+    def effective_name(self) -> str:
+        return self.display_name or self.name
 
 
 @dataclass(frozen=True)
