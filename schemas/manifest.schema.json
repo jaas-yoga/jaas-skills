@@ -104,6 +104,18 @@
       "default": null,
       "title": "Signature"
     },
+    "signature_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Signature Kind"
+    },
     "tags": {
       "items": {
         "type": "string"

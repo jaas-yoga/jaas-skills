@@ -43,6 +43,7 @@ from jaas_registry.api.schemas import ReleaseRequest, ReleaseResponse
 from jaas_registry.artifact.packaging import build_normalized_archive, compute_digest
 from jaas_registry.artifact.publish import publish_skill
 from jaas_registry.artifact.signing import load_or_create_keypair
+from jaas_registry.artifact.sigstore_trust import load_sigstore_trust_policy
 from jaas_registry.artifact.trust import ensure_key_registered, load_trust_policy
 from jaas_registry.authn.ci_credentials import GitHubOidcVerifier, resolve_release_tenant
 from jaas_registry.authn.repo_links import RepoLinkStore
@@ -242,9 +243,32 @@ def release_skill(
         if not (tmp_dir / "dependencies.yaml").exists():
             (tmp_dir / "dependencies.yaml").write_text("[]\n")
 
-        keypair = load_or_create_keypair(settings.policy_dir / "signing_key.pem")
-        ensure_key_registered(settings.policy_dir, keypair.public_key_pem())
-        trust_policy = load_trust_policy(settings.policy_dir)
+        # IMPLEMENTATION_PLAN.md Phase 1.2: a caller that already signed
+        # client-side with Sigstore (jaasctl release on the OIDC path)
+        # skips server-side dev-RSA signing entirely — the registry only
+        # ever verifies that signature, never produces its own. A caller
+        # with no bundle falls back to dev-RSA, unless this deployment has
+        # opted into requiring Sigstore for every release. publish_skill()
+        # itself enforces "exactly one of signing_key/external_signature";
+        # both pairs are passed explicitly (rather than a **kwargs dict)
+        # so that invariant stays type-checked here too.
+        keypair = None
+        trust_policy = None
+        sigstore_trust_policy = None
+        if body.sigstoreBundle is not None:
+            sigstore_trust_policy = load_sigstore_trust_policy(
+                identity_issuer=settings.sigstore_identity_issuer
+            )
+        elif settings.feature_flags.sigstore_signing_required:
+            raise JaasError(
+                ErrorCode.SIGSTORE_SIGNATURE_REQUIRED,
+                "this deployment requires a Sigstore signature for releases — upgrade "
+                "jaasctl and release via the OIDC auth path, which signs automatically",
+            )
+        else:
+            keypair = load_or_create_keypair(settings.policy_dir / "signing_key.pem")
+            ensure_key_registered(settings.policy_dir, keypair.public_key_pem())
+            trust_policy = load_trust_policy(settings.policy_dir)
 
         try:
             result = publish_skill(
@@ -252,6 +276,8 @@ def release_skill(
                 store=store,
                 signing_key=keypair,
                 trust_policy=trust_policy,
+                external_signature=body.sigstoreBundle,
+                sigstore_trust_policy=sigstore_trust_policy,
                 actor=provenance["source_repo"] or "ci",
                 audit_sink=StructuredLogAuditSink(),
                 owner_user=owner_user,

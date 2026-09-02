@@ -20,6 +20,7 @@ from jaas_registry.artifact.packaging import (
     compute_digest,
 )
 from jaas_registry.artifact.signing import DevKeypair, sign_digest
+from jaas_registry.artifact.sigstore_trust import SigstoreTrustPolicy
 from jaas_registry.artifact.trust import TrustPolicy
 from jaas_registry.artifact.verify import verify_artifact
 from jaas_registry.common.audit import AuditSink, PublishAuditEvent, new_publish_event
@@ -78,8 +79,14 @@ def publish_skill(
     *,
     source_dir: Path,
     store: ObjectStore,
-    signing_key: DevKeypair,
-    trust_policy: TrustPolicy,
+    signing_key: DevKeypair | None = None,
+    trust_policy: TrustPolicy | None = None,
+    # api/release_routes.py's Sigstore path: an already-produced Bundle
+    # (JSON) plus the policy to verify it against, instead of signing with
+    # a local RSA keypair. Exactly one of {signing_key, external_signature}
+    # must be given — see the ValueError checks below.
+    external_signature: str | None = None,
+    sigstore_trust_policy: SigstoreTrustPolicy | None = None,
     actor: str,
     audit_sink: AuditSink,
     existing_dependency_graph: dict[str, list[str]] | None = None,
@@ -173,17 +180,36 @@ def publish_skill(
         annotate_current_span_error(exc)
         raise
 
+    if (signing_key is None) == (external_signature is None):
+        raise ValueError(
+            "publish_skill requires exactly one of signing_key or external_signature"
+        )
+
     archive = build_normalized_archive(files)
     digest = compute_digest(archive)
-    signature = sign_digest(digest, signing_key)
+
+    if external_signature is not None:
+        signature = external_signature
+        signature_kind = "sigstore"
+    else:
+        assert signing_key is not None  # guaranteed by the exactly-one-of check above
+        signature = sign_digest(digest, signing_key)
+        signature_kind = "dev-rsa"
 
     # Ingest verification: re-check our own output before it becomes immutable,
     # guarding against signer/config bugs (design.md §3.3.1).
     verify_artifact(
-        archive_bytes=archive, digest=digest, signature=signature, trust_policy=trust_policy
+        archive_bytes=archive,
+        digest=digest,
+        signature=signature,
+        signature_kind=signature_kind,
+        trust_policy=trust_policy,
+        sigstore_trust_policy=sigstore_trust_policy,
     )
 
-    manifest = docs.manifest.model_copy(update={"digest": digest, "signature": signature})
+    manifest = docs.manifest.model_copy(
+        update={"digest": digest, "signature": signature, "signature_kind": signature_kind}
+    )
 
     blob_key = make_blob_key(digest)
     tag_key = make_tag_key(manifest.id, manifest.version)

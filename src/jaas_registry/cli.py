@@ -240,7 +240,8 @@ def cmd_publish(
 
     print(
         f"PUBLISHED: {result.manifest.id}@{result.manifest.version} "
-        f"digest={result.manifest.digest}"
+        f"digest={result.manifest.digest} (signed with local dev key, not Sigstore — "
+        "use `jaasctl release` from CI for a real Sigstore-signed release)"
     )
     return 0
 
@@ -256,7 +257,12 @@ def cmd_release(args: argparse.Namespace) -> int:
 
     import httpx
 
+    from jaas_registry.artifact.packaging import build_normalized_archive, compute_digest
     from jaas_registry.artifact.publish import load_source_documents
+    from jaas_registry.artifact.sigstore_sign import (
+        detect_ambient_identity_token,
+        sign_digest_with_sigstore,
+    )
 
     api_url = args.api_url.rstrip("/")
     try:
@@ -288,8 +294,27 @@ def cmd_release(args: argparse.Namespace) -> int:
         pass
 
     headers: dict[str, str] = {}
+    sigstore_bundle_json: str | None = None
     if args.oidc_token:
         headers["X-Jaas-OIDC-Token"] = args.oidc_token
+        # IMPLEMENTATION_PLAN.md Phase 1.2: the OIDC auth path already
+        # asserts a CI OIDC identity exists (that's what --oidc-token came
+        # from) — sign the same digest the server will independently
+        # recompute using that identity, so the release carries a real
+        # Sigstore signature instead of relying on server-side dev-RSA.
+        # No fallback: a missing ambient credential here means the
+        # environment doesn't actually have what --oidc-token implied.
+        identity_token = detect_ambient_identity_token()
+        if identity_token is None:
+            print(
+                "RELEASE FAILED: no ambient CI OIDC credential detected for Sigstore "
+                "signing (jaasctl release --oidc-token requires running inside a "
+                "supported CI provider, e.g. GitHub Actions with "
+                "`permissions: id-token: write`)"
+            )
+            return 1
+        digest = compute_digest(build_normalized_archive(files))
+        sigstore_bundle_json = sign_digest_with_sigstore(digest, identity_token)
     elif args.token:
         headers["Authorization"] = f"Bearer {args.token}"
     else:
@@ -309,6 +334,7 @@ def cmd_release(args: argparse.Namespace) -> int:
         "repoUrl": args.repo_url,
         "releaseBranch": args.release_branch,
         "sourcePath": source_path,
+        "sigstoreBundle": sigstore_bundle_json,
     }
 
     try:

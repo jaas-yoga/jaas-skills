@@ -43,6 +43,13 @@ class ManifestDocument(BaseModel):
     runtime: list[RuntimeCompatibility]
     digest: str | None = None
     signature: str | None = None
+    # "dev-rsa" | "sigstore" (artifact/signing.py vs. artifact/sigstore_sign.py)
+    # — like digest/signature, unset until publish. A record predating this
+    # field (parsed back via index/ingest.py) also reads as None here; that
+    # absence is treated as "dev-rsa" at the one place that matters
+    # (index_entry_from_manifest), not here — this field only ever reflects
+    # what's actually in the JSON, never guesses.
+    signature_kind: str | None = None
 
     model_config = {"populate_by_name": True}
 

@@ -39,6 +39,7 @@ from jaas_registry.api.schemas import (
     YankResponse,
 )
 from jaas_registry.artifact.packaging import extract_archive
+from jaas_registry.artifact.sigstore_trust import load_sigstore_trust_policy
 from jaas_registry.artifact.verify import verify_artifact
 from jaas_registry.artifact.yank import YankRecord, write_status
 from jaas_registry.authn.tenants import MembershipStore
@@ -444,7 +445,10 @@ def create_artifact_token(
     )
 
     record = token_issuer.issue(
-        blob_key=blob_key(entry.digest), digest=entry.digest, signature=entry.signature
+        blob_key=blob_key(entry.digest),
+        digest=entry.digest,
+        signature=entry.signature,
+        signature_kind=entry.signature_kind,
     )
     return ArtifactTokenResponse(
         token=record.token,
@@ -735,11 +739,18 @@ def download_artifact(
     archive_bytes = store.read(record.blob_key)
 
     if settings.feature_flags.high_assurance_signature_recheck:
+        sigstore_trust_policy = (
+            load_sigstore_trust_policy(identity_issuer=settings.sigstore_identity_issuer)
+            if record.signature_kind == "sigstore"
+            else None
+        )
         verify_artifact(
             archive_bytes=archive_bytes,
             digest=record.digest,
             signature=record.signature,
+            signature_kind=record.signature_kind,
             trust_policy=trust_policy,
+            sigstore_trust_policy=sigstore_trust_policy,
         )
 
     return Response(content=archive_bytes, media_type="application/x-tar")

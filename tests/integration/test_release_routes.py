@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from jaas_registry.api.app import create_app
 from jaas_registry.authn.ci_credentials import GITHUB_OIDC_ISSUER, GitHubOidcVerifier
 from jaas_registry.authz.policy import JwtAuthorizer
-from jaas_registry.common.config import Settings
+from jaas_registry.common.config import FeatureFlags, Settings
 from jaas_registry.guardrails.models import GuardrailFinding, GuardrailScanResult, GuardrailSeverity
 from jaas_registry.index.store import InMemoryIndex
 from jaas_registry.storage.local_filesystem import LocalFilesystemStore
@@ -594,3 +594,58 @@ class TestOidcAuthPath:
 
         logged = capsys.readouterr().out
         assert '"source_branch": "staging"' in logged
+
+
+@pytest.fixture
+def client_requiring_sigstore(tmp_path, rsa_keypair):
+    """IMPLEMENTATION_PLAN.md Phase 1.2: same rig as `client`, but with
+    Settings.feature_flags.sigstore_signing_required=True — a deployment
+    that has opted into requiring a Sigstore-signed release."""
+    _, public_key = rsa_keypair
+    index = InMemoryIndex()
+    store = LocalFilesystemStore(tmp_path / "storage")
+    settings = Settings(
+        storage_root=tmp_path / "storage",
+        policy_dir=tmp_path / "policy",
+        release_oidc_audience=AUDIENCE,
+        feature_flags=FeatureFlags(sigstore_signing_required=True),
+    )
+    authorizer = JwtAuthorizer(
+        secret=DEFAULT_SECRET, issuer=DEFAULT_ISSUER, audience=DEFAULT_AUDIENCE
+    )
+    app = create_app(
+        index=index,
+        store=store,
+        settings=settings,
+        authorizer=authorizer,
+        guardrails_client=FakeGuardrailsClient(),
+        oidc_verifier=GitHubOidcVerifier(jwk_client=_FakeJwkClient(public_key)),
+    )
+    return TestClient(app)
+
+
+class TestSigstoreSigningRequired:
+    def test_default_deployment_still_dev_rsa_signs_and_records_the_kind(self, client):
+        """The flag defaults off — an unmodified deployment (and every CI
+        caller on an older jaasctl that never sends a bundle) keeps
+        working exactly as before this feature existed."""
+        from jaas_registry.index.ingest import parse_published_record
+        from jaas_registry.storage.keys import tag_key
+
+        token, body = _link_headers_and_body(client)
+        resp = client.post("/api/v1/skills/release", json=body, headers=_auth(token))
+        assert resp.status_code == 200, resp.text
+
+        record = client.app.state.store.read(tag_key(VALID_MANIFEST["id"], "1.2.3"))
+        entry = parse_published_record(record)
+        assert entry.signature_kind == "dev-rsa"
+
+    def test_a_release_with_no_bundle_is_rejected_when_required(self, client_requiring_sigstore):
+        token, body = _link_headers_and_body(client_requiring_sigstore)
+
+        resp = client_requiring_sigstore.post(
+            "/api/v1/skills/release", json=body, headers=_auth(token)
+        )
+
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["code"] == "SIGSTORE_SIGNATURE_REQUIRED"

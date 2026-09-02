@@ -80,6 +80,13 @@ jobs:
       # actions/github-script exposes core.getIDToken(audience) — the
       # audience string here must exactly match the registry's configured
       # JAAS_RELEASE_OIDC_AUDIENCE (default "jaas-registry").
+      #
+      # `jaasctl release --oidc-token` also keyless-signs the release with
+      # Sigstore, using this same job's ambient GitHub Actions OIDC
+      # identity (the `permissions: id-token: write` above is what makes
+      # that available) — no separate token request needed for that; it's
+      # a second, independent identity token sigstore-python requests for
+      # itself under the hood, not this `jaas-registry`-audience one.
       - name: Request OIDC token
         id: oidc
         uses: actions/github-script@v7

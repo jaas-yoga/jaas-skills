@@ -20,6 +20,13 @@ class ArtifactToken:
     blob_key: str
     digest: str
     signature: str
+    # "dev-rsa" | "sigstore" — needed so a high-assurance recheck at
+    # redemption (api/routes.py's download_artifact) verifies `signature`
+    # against the right trust policy. Required, not defaulted: every
+    # IndexEntry has a signature_kind (index/models.py defaults it to
+    # "dev-rsa"), so every caller of issue() already has a real value to
+    # pass, not just old records that predate the field.
+    signature_kind: str
     expires_at: float
 
 
@@ -28,12 +35,15 @@ class ArtifactTokenIssuer:
         self.ttl_seconds = ttl_seconds
         self._tokens: dict[str, ArtifactToken] = {}
 
-    def issue(self, *, blob_key: str, digest: str, signature: str) -> ArtifactToken:
+    def issue(
+        self, *, blob_key: str, digest: str, signature: str, signature_kind: str
+    ) -> ArtifactToken:
         record = ArtifactToken(
             token=secrets.token_urlsafe(32),
             blob_key=blob_key,
             digest=digest,
             signature=signature,
+            signature_kind=signature_kind,
             expires_at=time.time() + self.ttl_seconds,
         )
         self._tokens[record.token] = record

@@ -114,6 +114,58 @@ def test_high_assurance_recheck_rejects_wrong_trust_policy(system):
     assert resp.json()["code"] == "INVALID_SIGNATURE"
 
 
+def test_high_assurance_recheck_dispatches_to_sigstore_for_a_sigstore_signed_artifact(
+    tmp_path, monkeypatch
+):
+    """IMPLEMENTATION_PLAN.md Phase 1.2 gap fix: a Sigstore-signed artifact's
+    token must recheck against a SigstoreTrustPolicy, not silently try
+    (and fail) an RSA check — this was a real bug found while implementing
+    this feature (ArtifactToken didn't carry signature_kind at all).
+    Monkeypatches api.routes.load_sigstore_trust_policy so this test
+    doesn't need real network access to Sigstore's trust root."""
+    from dataclasses import dataclass
+
+    from jaas_registry.artifact.publish import publish_skill
+    from jaas_registry.common.audit import InMemoryAuditSink
+
+    @dataclass
+    class _FakeSigstoreTrustPolicy:
+        result: bool
+
+        def verify(self, digest: str, signature: str) -> bool:
+            return self.result
+
+    store = LocalFilesystemStore(tmp_path / "storage")
+    write_package_dir(tmp_path / "pkg")
+    publish_skill(
+        source_dir=tmp_path / "pkg",
+        store=store,
+        external_signature="a-sigstore-bundle-as-json",
+        sigstore_trust_policy=_FakeSigstoreTrustPolicy(result=True),
+        actor="ci-pipeline",
+        audit_sink=InMemoryAuditSink(),
+    )
+    from jaas_registry.index.bootstrap import bootstrap_index
+
+    index = bootstrap_index(store)
+
+    monkeypatch.setattr(
+        "jaas_registry.api.routes.load_sigstore_trust_policy",
+        lambda *, identity_issuer: _FakeSigstoreTrustPolicy(result=True),
+    )
+
+    settings = Settings(
+        storage_root=store.root, feature_flags=FeatureFlags(high_assurance_signature_recheck=True)
+    )
+    app = create_app(index=index, store=store, settings=settings)
+    client = TestClient(app)
+    token = _issue_token(client)
+
+    resp = client.get(f"/api/v1/artifacts/{token}")
+
+    assert resp.status_code == 200
+
+
 def test_high_assurance_disabled_by_default_skips_recheck_even_if_tampered(system):
     client = system["make_client"](high_assurance=False)
     token = _issue_token(client)

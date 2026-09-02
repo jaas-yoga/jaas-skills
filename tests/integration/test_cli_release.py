@@ -18,6 +18,25 @@ def _isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("JAAS_POLICY_DIR", str(tmp_path / "policy"))
 
 
+def _fake_ambient_sigstore_signing(monkeypatch, *, bundle_json: str = '{"fake": "bundle"}') -> None:
+    """Stands in for a real ambient CI OIDC identity + a real Fulcio/Rekor
+    round trip — neither is available in this test process. Patches at
+    artifact/sigstore_sign.py's own boundary (detect_credential +
+    sign_digest_with_sigstore), not deep inside the sigstore-python
+    library, matching this repo's established fake-at-the-seam convention
+    (e.g. tests/fixtures/fake_guardrails_client.py)."""
+    monkeypatch.setattr(
+        "jaas_registry.artifact.sigstore_sign.detect_credential", lambda: "raw-jwt-value"
+    )
+    monkeypatch.setattr(
+        "jaas_registry.artifact.sigstore_sign.IdentityToken", lambda raw_token: raw_token
+    )
+    monkeypatch.setattr(
+        "jaas_registry.artifact.sigstore_sign.sign_digest_with_sigstore",
+        lambda digest, identity_token: bundle_json,
+    )
+
+
 class _FakeResponse:
     def __init__(self, status_code: int, payload: dict):
         self.status_code = status_code
@@ -63,6 +82,7 @@ class TestCmdRelease:
     def test_uses_oidc_header_when_oidc_token_given(self, tmp_path, monkeypatch):
         write_package_dir(tmp_path / "pkg")
         captured = {}
+        _fake_ambient_sigstore_signing(monkeypatch)
 
         def fake_post(url, *, json, headers, timeout):
             captured["headers"] = headers
@@ -73,6 +93,75 @@ class TestCmdRelease:
         main(["release", str(tmp_path / "pkg"), "--tag", "v1.0.0", "--oidc-token", "eyOIDC"])
 
         assert captured["headers"] == {"X-Jaas-OIDC-Token": "eyOIDC"}
+
+    def test_oidc_path_attaches_a_sigstore_bundle_to_the_request_body(self, tmp_path, monkeypatch):
+        """The --oidc-token path implies a CI OIDC identity is available —
+        jaasctl release uses that same identity for keyless Sigstore
+        signing (IMPLEMENTATION_PLAN.md Phase 1.2), attaching the bundle
+        so the registry can verify it instead of falling back to
+        server-side dev-RSA signing."""
+        write_package_dir(tmp_path / "pkg")
+        captured = {}
+        _fake_ambient_sigstore_signing(monkeypatch, bundle_json='{"fake": "bundle"}')
+
+        def fake_post(url, *, json, headers, timeout):
+            captured["body"] = json
+            return _FakeResponse(200, {"id": "x", "version": "1.0.0", "digest": "sha256:x"})
+
+        monkeypatch.setattr("httpx.post", fake_post)
+
+        main(["release", str(tmp_path / "pkg"), "--tag", "v1.0.0", "--oidc-token", "eyOIDC"])
+
+        assert captured["body"]["sigstoreBundle"] == '{"fake": "bundle"}'
+
+    def test_oidc_path_hard_fails_with_no_ambient_credential(self, tmp_path, capsys, monkeypatch):
+        """No fallback to dev-RSA signing on this path — a caller passing
+        --oidc-token is asserting a CI OIDC identity exists; if
+        sigstore-python's own ambient detection can't find one, that's a
+        real environment problem to surface, not silently paper over."""
+        write_package_dir(tmp_path / "pkg")
+        monkeypatch.setattr(
+            "jaas_registry.artifact.sigstore_sign.detect_credential", lambda: None
+        )
+
+        exit_code = main(
+            ["release", str(tmp_path / "pkg"), "--tag", "v1.0.0", "--oidc-token", "eyOIDC"]
+        )
+
+        assert exit_code == 1
+        assert "no ambient CI OIDC credential" in capsys.readouterr().out
+
+    def test_pat_path_does_not_attempt_sigstore_signing(self, tmp_path, monkeypatch):
+        """The PAT auth path exists specifically for CI systems without an
+        ambient OIDC identity — it must never even try Sigstore signing,
+        let alone hard-fail for lacking one."""
+        write_package_dir(tmp_path / "pkg")
+
+        def _boom():
+            raise AssertionError("PAT-path release must not touch Sigstore signing at all")
+
+        monkeypatch.setattr("jaas_registry.artifact.sigstore_sign.detect_credential", _boom)
+        monkeypatch.setattr(
+            "httpx.post",
+            lambda url, *, json, headers, timeout: _FakeResponse(
+                200, {"id": "x", "version": "1.0.0", "digest": "sha256:x"}
+            ),
+        )
+
+        exit_code = main(
+            [
+                "release",
+                str(tmp_path / "pkg"),
+                "--tag",
+                "v1.0.0",
+                "--token",
+                "tok123",
+                "--repo-url",
+                "https://github.com/acme/tool-x",
+            ]
+        )
+
+        assert exit_code == 0
 
     def test_release_branch_is_included_in_the_request_body(self, tmp_path, monkeypatch):
         write_package_dir(tmp_path / "pkg")
@@ -105,6 +194,7 @@ class TestCmdRelease:
         self, tmp_path, capsys, monkeypatch
     ):
         write_package_dir(tmp_path / "pkg")
+        _fake_ambient_sigstore_signing(monkeypatch)
         monkeypatch.setattr(
             "httpx.post",
             lambda url, *, json, headers, timeout: _FakeResponse(

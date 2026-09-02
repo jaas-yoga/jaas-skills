@@ -114,7 +114,56 @@ tested instead of relying on someone noticing a break by hand.
 
 ---
 
-### 1.2 — Real Sigstore/Cosign signing · `jaas-skills`
+### 1.2 — Real Sigstore/Cosign signing · `jaas-skills` — ✅ DONE (2026-09-02)
+
+**Status: implemented via TDD, verified against the real `sigstore` library
+(v3+, actually installed and used, not stubbed).** 44 new/updated tests
+across 8 files, full suite 714/715 pass (the one failure is the
+pre-existing perf flake), `ruff` clean, `pip-audit` clean on the new
+dependency tree, no new `mypy` errors. Confirmed with the user before
+coding: local `jaasctl release` runs with no ambient CI OIDC credential
+**hard-fail** with a clear message — no silent dev-RSA fallback.
+
+**Real design correction found during implementation, not in the original
+plan:** the plan didn't distinguish `jaasctl release`'s two auth paths
+(`--oidc-token` vs `--token`/PAT) when describing "the release path
+becomes Sigstore's primary path." Making Sigstore signing mandatory
+regardless of auth path would have been incoherent — the **PAT path exists
+specifically for CI systems without an ambient OIDC identity**
+(non-GitHub-Actions CI), so requiring Sigstore (which needs OIDC) there
+contradicts the reason that path exists, and would have broken every
+existing PAT-path test and every real non-GitHub-Actions CI user on
+upgrade. Fixed: Sigstore signing (and the hard-fail-if-missing check) only
+applies to the `--oidc-token` path; `--token` (PAT) releases are
+untouched, always dev-RSA-signed server-side exactly as before, regardless
+of `sigstore_signing_required`'s setting (that flag only ever rejects a
+*missing bundle*, and a PAT-path release never sends one — so enabling it
+deployment-wide effectively restricts releases to GitHub-Actions-OIDC
+callers, which is flagged as the real, intended consequence of turning it
+on, not a bug).
+
+**Second real gap found and fixed, via manual review after the main
+implementation was green:** `ArtifactToken` (`artifact/tokens.py`, backing
+short-lived artifact download tokens) carried `digest`/`signature` but no
+`signature_kind`. With `high_assurance_signature_recheck` enabled, a
+Sigstore-signed artifact's download would have tried to verify its Bundle
+JSON as an RSA-PSS signature and always failed — a real bug the original
+plan's scope didn't anticipate (it only discussed the ingest-time verify
+path, not this retrieval-time one). Fixed: `ArtifactToken` and
+`ArtifactTokenIssuer.issue()` now carry `signature_kind`;
+`download_artifact` dispatches on it, loading a `SigstoreTrustPolicy` via
+a `functools.lru_cache`-memoized factory (see below) only when actually
+needed. Covered by a new integration test
+(`test_high_assurance_recheck_dispatches_to_sigstore_for_a_sigstore_signed_artifact`).
+
+**Third thing worth knowing:** `sigstore.verify.Verifier.production()`
+does real network I/O at construction (~2s — fetches Sigstore's
+TUF-distributed trust root). It is **never** called at app startup
+(`api/app.py::create_app()` doesn't import `artifact/sigstore_trust.py` at
+all) and is memoized with `@lru_cache` where it is called
+(`load_sigstore_trust_policy`), so this cost is paid at most once per
+process, only if a release or high-assurance download actually needs it —
+not on every test run, not on every request.
 
 **What we're building:** Today, every publish path (CLI, web UI, and the
 CI `/release` endpoint) signs artifacts server-side with an in-process
@@ -166,23 +215,44 @@ window, one with forged-looking provenance). This moves the CI release
 path onto the same keyless-signing model the rest of the package-registry
 industry (npm, PyPI Trusted Publishing) is converging on.
 
-**Impacted areas:**
-- Backend: `src/jaas_registry/artifact/signing.py`, `verify.py`, `trust.py`
-  (new `SigstoreTrustPolicy` alongside the unchanged RSA one),
-  `artifact/publish.py` (accepts either signing path), `api/schemas.py`
-  (`ReleaseRequest` new optional field), `api/release_routes.py`,
-  `common/config.py` (new `sigstore_signing_required` flag + Fulcio/Rekor
-  settings), `pyproject.toml` (new `sigstore-python` dependency),
-  `index/models.py`/`index/ingest.py` (new `signature_kind` field, default
-  handling).
-- CLI: `cli.py`'s `release` command gains the client-side signing step.
+**Impacted areas (actual):**
+- New: `artifact/sigstore_sign.py` (client-side signing + ambient-credential
+  detection), `artifact/sigstore_trust.py` (`SigstoreTrustPolicy` +
+  memoized `load_sigstore_trust_policy` factory) — kept as two files, not
+  one, mirroring the existing `signing.py`/`trust.py` split. New tests:
+  `tests/unit/test_artifact_sigstore.py`,
+  `tests/unit/test_artifact_sigstore_sign.py`,
+  `tests/unit/test_verify_signature_kind_dispatch.py`.
+- Modified: `artifact/verify.py` (`signature_kind`/`sigstore_trust_policy`
+  dispatch params, both optional/defaulted), `artifact/publish.py`
+  (`external_signature`/`sigstore_trust_policy` params, `signing_key`/
+  `trust_policy` now optional with a runtime exactly-one-of check),
+  `artifact/tokens.py` (`ArtifactToken.signature_kind` — a gap found
+  during review, not in the original plan; see above),
+  `validation/models.py` (`ManifestDocument.signature_kind`),
+  `index/models.py`/`index/ingest.py` (`IndexEntry.signature_kind`,
+  default-to-`"dev-rsa"` on absence), `api/schemas.py` (`ReleaseRequest.
+  sigstoreBundle`), `api/release_routes.py` (dispatch + `
+  sigstore_signing_required` check), `api/routes.py` (`download_artifact`'s
+  high-assurance recheck now signature_kind-aware; `create_artifact_token`
+  passes it through), `common/config.py` (`sigstore_signing_required` flag,
+  `sigstore_identity_issuer` setting — no separate Fulcio/Rekor URL
+  settings needed, `Verifier.production()`/`ClientTrustConfig.production()`
+  already encode the standard public-good endpoints), `common/errors.py`
+  (new `SIGSTORE_SIGNATURE_REQUIRED` code), `pyproject.toml` (`sigstore>=3.0`
+  in base `dependencies`), `schemas/manifest.schema.json` (regenerated —
+  `uv run python tools/generate_schemas.py`, required after any
+  `ManifestDocument` field change, per `tests/unit/test_schema_drift.py`).
+- CLI: `cli.py::cmd_release` signs client-side, but **only on the
+  `--oidc-token` path** — see the design-correction note above for why the
+  `--token` (PAT) path is untouched. `cmd_publish`'s success message now
+  notes "signed with local dev key, not Sigstore."
 - CI reference workflow: `examples/ci/github-actions-release.yml` — no new
-  secrets, existing `permissions: id-token: write` is sufficient; comments
-  updated to explain the implicit Sigstore token request.
-- **Not touched:** `jaasctl publish`, web-UI draft-publish
+  secrets, existing `permissions: id-token: write` is sufficient; comment
+  added explaining the implicit second (Sigstore-specific) token request.
+- **Not touched:** `jaasctl publish`'s signing itself, web-UI draft-publish
   (`api/draft_routes.py`), or anything in `jaas-ui` — those paths keep
-  dev-RSA signing unconditionally, just with a clearer "not Sigstore"
-  label in their output.
+  dev-RSA signing unconditionally.
 
 ---
 

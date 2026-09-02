@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass
 
 import pytest
 
@@ -16,6 +17,14 @@ from jaas_registry.storage.local_filesystem import LocalFilesystemStore
 from tests.fixtures.fake_guardrails_client import FakeGuardrailsClient
 from tests.fixtures.manifests import VALID_MANIFEST
 from tests.fixtures.package_dir import write_package_dir
+
+
+@dataclass
+class _FakeSigstoreTrustPolicy:
+    result: bool
+
+    def verify(self, digest: str, signature: str) -> bool:
+        return self.result
 
 
 @pytest.fixture
@@ -44,6 +53,72 @@ def test_publish_populates_digest_and_signature(rig):
     assert result.manifest.signature
     assert rig["store"].exists(result.blob_key)
     assert rig["store"].exists(result.tag_key)
+    # IMPLEMENTATION_PLAN.md Phase 1.2: every pre-existing publish path
+    # (this one — the CLI/web-UI local-dev signing path) still records the
+    # "dev-rsa" kind, never silently defaulting to something else.
+    assert result.manifest.signature_kind == "dev-rsa"
+
+
+def test_publish_accepts_an_external_sigstore_signature_instead_of_signing_locally(rig):
+    """The CI release path (api/release_routes.py) supplies an
+    already-produced Sigstore signature rather than asking publish_skill()
+    to sign with a local RSA keypair — signing_key/trust_policy are both
+    omitted entirely here, exactly as that call site will do."""
+    write_package_dir(rig["source_dir"])
+    result = publish_skill(
+        source_dir=rig["source_dir"],
+        store=rig["store"],
+        external_signature="a-sigstore-bundle-as-json",
+        sigstore_trust_policy=_FakeSigstoreTrustPolicy(result=True),
+        actor="ci-pipeline",
+        audit_sink=rig["audit_sink"],
+    )
+    assert result.manifest.signature == "a-sigstore-bundle-as-json"
+    assert result.manifest.signature_kind == "sigstore"
+
+
+def test_publish_rejects_an_external_signature_the_sigstore_policy_does_not_approve(rig):
+    write_package_dir(rig["source_dir"])
+    with pytest.raises(JaasError) as exc_info:
+        publish_skill(
+            source_dir=rig["source_dir"],
+            store=rig["store"],
+            external_signature="a-sigstore-bundle-as-json",
+            sigstore_trust_policy=_FakeSigstoreTrustPolicy(result=False),
+            actor="ci-pipeline",
+            audit_sink=rig["audit_sink"],
+        )
+    assert exc_info.value.code == ErrorCode.INVALID_SIGNATURE
+    # Nothing gets written for a signature that fails ingest verification —
+    # same "reject before persisting anything" posture as every other
+    # publish-time check.
+    assert rig["store"].list_prefix("tags/") == []
+
+
+def test_publish_requires_exactly_one_of_signing_key_or_external_signature(rig):
+    write_package_dir(rig["source_dir"])
+    with pytest.raises(ValueError, match="exactly one"):
+        publish_skill(
+            source_dir=rig["source_dir"],
+            store=rig["store"],
+            signing_key=rig["signing_key"],
+            trust_policy=rig["trust_policy"],
+            external_signature="a-sigstore-bundle-as-json",
+            sigstore_trust_policy=_FakeSigstoreTrustPolicy(result=True),
+            actor="ci-pipeline",
+            audit_sink=rig["audit_sink"],
+        )
+
+
+def test_publish_requires_signing_key_or_external_signature_not_neither(rig):
+    write_package_dir(rig["source_dir"])
+    with pytest.raises(ValueError, match="exactly one"):
+        publish_skill(
+            source_dir=rig["source_dir"],
+            store=rig["store"],
+            actor="ci-pipeline",
+            audit_sink=rig["audit_sink"],
+        )
 
 
 def test_publish_emits_audit_event_with_actor_and_digest(rig):

@@ -408,6 +408,13 @@ class ReleaseRequest(BaseModel):
     # anything packaged/signed/executed, so an unverified claim here has
     # no security consequence, unlike repoUrl/releaseBranch above.
     sourcePath: str | None = None
+    # jaasctl release's client-side Sigstore signature (a Bundle,
+    # JSON-serialized) — only ever produced on the OIDC auth path, since
+    # keyless signing needs the same ambient CI identity that path already
+    # requires. None means "server-side dev-RSA signing" (unconditionally
+    # true for the PAT auth path, and true for the OIDC path too unless
+    # Settings.feature_flags.sigstore_signing_required rejects that).
+    sigstoreBundle: str | None = None
 
 
 class ReleaseResponse(BaseModel):

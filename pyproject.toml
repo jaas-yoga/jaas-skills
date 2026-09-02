@@ -31,6 +31,13 @@ dependencies = [
     # (S3 conditional writes, GA'd Aug 2024), which write_tag_if_absent relies
     # on for its immutability guarantee.
     "boto3>=1.35",
+    # artifact/sigstore_sign.py + artifact/sigstore_trust.py: real
+    # keyless/OIDC-bound signing for the CI release path (design.md §7.1),
+    # replacing artifact/signing.py's dev-RSA stand-in there. The server
+    # only ever verifies with this (no signing key of its own), so no new
+    # secret is needed for that side — client-side signing (jaasctl
+    # release) needs an ambient CI OIDC identity, not a stored credential.
+    "sigstore>=3.0",
 ]
 
 [project.optional-dependencies]

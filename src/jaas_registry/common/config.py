@@ -17,6 +17,15 @@ class FeatureFlags(BaseSettings):
 
     high_assurance_signature_recheck: bool = False
     tenant_boundary_enforcement: bool = False
+    # api/release_routes.py: reject a release with no sigstoreBundle instead
+    # of falling back to server-side dev-RSA signing. Off by default so
+    # upgrading the registry doesn't break CI callers still on an older
+    # jaasctl that never sends a bundle — see IMPLEMENTATION_PLAN.md Phase
+    # 1.2 for the rollout reasoning. Only meaningful for the OIDC release
+    # path; the PAT release path can never supply a Sigstore bundle at all
+    # (no ambient CI OIDC identity to sign with), so enabling this
+    # effectively restricts releases to GitHub-Actions-OIDC callers only.
+    sigstore_signing_required: bool = False
 
 
 class Settings(BaseSettings):
@@ -92,6 +101,13 @@ class Settings(BaseSettings):
     # sides. Distinct from jwt_audience (this app's own session tokens);
     # unrelated token spaces that happen to both need an audience value.
     release_oidc_audience: str = "jaas-registry"
+
+    # artifact/sigstore_trust.py: the OIDC issuer a release's Sigstore
+    # bundle's Fulcio certificate must have been issued against — the same
+    # value as authn/ci_credentials.py's GITHUB_OIDC_ISSUER by default
+    # (not imported from there directly, to avoid a config->authn import
+    # for one string constant; keep the two in sync if this ever changes).
+    sigstore_identity_issuer: str = "https://token.actions.githubusercontent.com"
 
     # authn/github_oauth.py: the "Connect GitHub" flow that powers the live
     # repo/branch picker in Connect-a-repo (tenant_routes.py's repo-links

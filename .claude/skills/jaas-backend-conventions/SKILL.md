@@ -291,6 +291,57 @@ shape — don't invent a new one:
   See `examples/ci/github-actions-release.yml` for the reference workflow
   these commands are meant to run inside.
 
+## Sigstore signing (`artifact/sigstore_sign.py`, `artifact/sigstore_trust.py`)
+
+- **Two signature kinds coexist permanently, not just during a
+  migration**: `"dev-rsa"` (`artifact/signing.py`/`trust.py`, the original
+  in-process RSA stand-in) and `"sigstore"` (real keyless/OIDC-bound
+  signing). `IndexEntry.signature_kind`/`ManifestDocument.signature_kind`
+  carry which one; absent (pre-existing records) defaults to `"dev-rsa"`
+  at `index_entry_from_manifest`, the same pattern this codebase already
+  uses for `visibility`. `artifact/verify.py::verify_artifact()` dispatches
+  on it — every pre-existing call site that omits `signature_kind` gets
+  the identical `"dev-rsa"` behavior it always had.
+- **Sigstore signing only happens on `jaasctl release`'s `--oidc-token`
+  path, never `--token` (PAT)** — the PAT path exists specifically for CI
+  systems *without* an ambient OIDC identity, so requiring Sigstore
+  (which needs one) there would be self-contradictory. If you're adding
+  anything that touches `cmd_release`'s signing, keep this split; don't
+  make Sigstore signing unconditional.
+- `Settings.feature_flags.sigstore_signing_required` only rejects a
+  release with **no bundle at all** — it doesn't (and can't) force a PAT
+  release to become Sigstore-signed. Enabling it deployment-wide is
+  equivalent to "GitHub-Actions-OIDC releases only," not "Sigstore or
+  bust for everyone."
+- **`sigstore.verify.Verifier.production()` does real network I/O at
+  construction** (~2s — fetches Sigstore's TUF-distributed trust root).
+  Never call it eagerly (`api/app.py::create_app()` never imports
+  `sigstore_trust.py` at all, matching how `app.state.trust_policy`
+  itself is a cheap empty default, not `load_trust_policy(...)`, at
+  startup — see the FastAPI wiring section above). `load_sigstore_trust_policy()`
+  is `@lru_cache`d for this reason; call sites (`api/release_routes.py`,
+  `api/routes.py::download_artifact`) call it directly rather than
+  threading it through `app.state`/DI, since the cache already gives them
+  the "construct once" property without that plumbing.
+- **`ArtifactToken` (`artifact/tokens.py`) must carry `signature_kind`** —
+  a real bug caught late during this feature's own implementation:
+  without it, `download_artifact`'s high-assurance recheck
+  (`Settings.feature_flags.high_assurance_signature_recheck`) would try to
+  verify a Sigstore Bundle as an RSA-PSS signature and always fail. Any
+  new code path that reads a signature back out for reverification needs
+  to carry and check `signature_kind` the same way — don't assume
+  `TrustPolicy`/dev-RSA is the only kind in play.
+- Testing this without real network or a real CI OIDC identity: inject a
+  fake at the `ArtifactVerifier`/policy boundary (`SigstoreTrustPolicy`
+  takes an injectable `verifier`, matching `GuardrailsClient`'s
+  real-vs-fake DI pattern), or monkeypatch `artifact/sigstore_sign.py`'s
+  own `detect_credential`/`sign_digest_with_sigstore` at their module
+  attributes (not deep inside the `sigstore` package) — see
+  `tests/integration/test_cli_release.py`'s `_fake_ambient_sigstore_signing()`
+  helper. A malformed/garbage Sigstore bundle string is a legitimate,
+  cheap thing to test directly (`Bundle.from_json()` raises on it, caught
+  and turned into `False`) — no real bundle needed for that path.
+
 ## Tests
 
 - `tmp_path` is the standard way to get an isolated store directory for any
@@ -311,6 +362,11 @@ shape — don't invent a new one:
   declared under PEP 621 `[project.optional-dependencies].dev`, which plain
   `uv sync` skips. After adding any new dependency, run
   `uv sync --extra dev`, or the dev tools silently vanish from `.venv`.
+- **Any `ManifestDocument` field change needs a schema regen**:
+  `tests/unit/test_schema_drift.py` diffs the live-generated JSON Schema
+  against the checked-in `schemas/manifest.schema.json` and fails if
+  they've drifted. Run `uv run python tools/generate_schemas.py` and
+  commit the result in the same change — don't hand-edit the schema file.
 
 ## Git/GitHub state (check before assuming otherwise)
 

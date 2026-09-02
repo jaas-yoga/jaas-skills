@@ -54,6 +54,7 @@ def index_entry_from_manifest(
         version=manifest.version,
         digest=manifest.digest,
         signature=manifest.signature,
+        signature_kind=manifest.signature_kind or "dev-rsa",
         publish_timestamp=publish_timestamp or datetime.now(UTC).isoformat(),
         tags=tuple(manifest.tags),
         runtime_families=tuple(rt.family for rt in manifest.runtime),

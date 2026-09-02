@@ -89,6 +89,11 @@ class IndexEntry:
     # "attempted_with_findings" | "not_attempted".
     guardrail_level_statuses: tuple[tuple[int, str], ...] = ()
     guardrail_warning_check_ids: tuple[str, ...] = ()
+    # "dev-rsa" | "sigstore" (artifact/signing.py vs. artifact/sigstore_sign.py) —
+    # default preserves every record published before this field existed,
+    # matching validation/models.py::ManifestDocument's None->"dev-rsa"
+    # handling in index_entry_from_manifest below.
+    signature_kind: str = "dev-rsa"
     # Overlaid post-hoc from the status.json sidecar (artifact/yank.py) —
     # never read from or written into the manifest record itself. Default
     # preserves every pre-existing call site (tests, fixtures, a tag
