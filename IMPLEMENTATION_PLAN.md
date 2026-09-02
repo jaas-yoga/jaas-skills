@@ -1043,19 +1043,91 @@ clean. Both repos' `SKILL.md` conventions files updated.
 
 ## Phase 4 — Scale the ecosystem (6–12 months)
 
-**Status:** 4.4 done this session (2026-09-02) — see below. 4.1, 4.2, 4.3,
-4.5 not started; each needs its own dedicated Explore→Plan pass before
-coding (4.2 and 4.3 explicitly so, per their sections below).
+**Status:** 4.1 and 4.4 done this session (2026-09-02) — see below. 4.2,
+4.3, 4.5 not started; each needs its own dedicated Explore→Plan pass
+before coding (4.2 and 4.3 explicitly so, per their sections below).
 
-### 4.1 — Framework SDKs (LangGraph, CrewAI, AutoGen) · new packages
-**What:** Thin client packages wrapping the existing registry REST API per
-each framework's tool/plugin conventions.
-**Breaking-change risk:** None to the existing registry — these are new,
-separate packages consuming the existing public API surface.
-**Improves:** Removes today's "hand-write REST calls" integration tax for
-each framework.
-**Impacted areas:** entirely new repos/packages, no changes to `jaas-ui`
-or `jaas-skills`.
+### 4.1 — Framework SDKs (LangGraph, CrewAI, AutoGen) · new packages — ✅ DONE (2026-09-02)
+
+**Two scoping decisions confirmed with the user before building, since
+the roadmap's wording was ambiguous on both:**
+- **Location:** the roadmap says "new packages"/"entirely new repos" —
+  ambiguous between real standalone GitHub repos and packages inside this
+  repo. Built as four independent packages under a new `sdks/` directory
+  in this repo (not a uv workspace — each has its own `pyproject.toml`
+  and `.venv`, wired together via `[tool.uv.sources]` path deps), not new
+  repos. Easy to split into standalone repos later once stable enough to
+  publish to PyPI independently; avoided the overhead/commitment of real
+  `gh repo create` calls for a first cut.
+- **Framework dependencies:** "thin client... per each framework's tool
+  conventions" only means something if the adapters' output is genuinely
+  usable by each framework's real runtime, not just shaped like it should
+  be. Confirmed: install `langgraph`/`crewai`/`autogen-core` (etc.) for
+  real, and validate against real framework classes (`langchain_core.
+  tools.BaseTool`, `crewai.tools.BaseTool`, `autogen_core.tools.
+  FunctionTool`) and real tool-container construction (`langgraph.
+  prebuilt.ToolNode`, a real `crewai.Agent`, a real `autogen_agentchat.
+  agents.AssistantAgent`), not mocks.
+
+**What we built — `sdks/`, four packages:**
+- **`jaas-client`** — the shared core. A thin, standalone `httpx`+`pyyaml`
+  client (`JaasRegistryClient`) reimplementing the exact request sequence
+  `jaasctl pull`/`install` already use (`cli.py::_download_skill_files`:
+  artifact-token → redeem → extract), but as typed, importable, non-CLI
+  code (`errors.py`'s `JaasApiError`/`JaasNotFoundError`/`JaasAuthError`
+  hierarchy, not print-and-return-`None`). Archive extraction is a
+  from-scratch stdlib-`tarfile` reimplementation, not an import of
+  `artifact/packaging.py`, so this package never depends on the full
+  `jaas_registry` backend at runtime (only at test time, as an editable
+  path dev-dependency, for real end-to-end interop tests against a real
+  `create_app()` instance). `search()`, `get_metadata()`, `pull()`, and
+  `get_entrypoint_content()` (fetches a skill's packaged entrypoint file
+  — its instructions, typically a SKILL.md — the one method with real
+  product judgment behind it: see below). 19 tests (13 unit, against
+  `httpx.MockTransport`; 6 real end-to-end, against a real in-process
+  `jaas_registry` app).
+- **`jaas-langgraph` / `jaas-crewai` / `jaas-autogen`** — three thin
+  adapters, same shape: `build_jaas_tools(client) -> list[<framework's
+  tool type>]`, exactly two tools each (`search_skills`, `get_skill`),
+  differing only in each framework's own tool-wrapping convention
+  (LangChain's `@tool` → `BaseTool`, CrewAI's `@tool` → `BaseTool`,
+  AutoGen's `FunctionTool(func, description=..., name=...)`). Each takes
+  a structurally-typed `_JaasClientLike` `Protocol`, not a concrete import
+  of `JaasRegistryClient`, keeping every adapter decoupled and separately
+  testable. 8 tests each (4-5 unit against a hand-rolled fake client; 3-4
+  real-interop against the real framework package AND a real
+  `jaas_registry` app). 43 SDK tests total, all green.
+- **A real product decision behind the two-tool shape:** a "skill" in
+  this registry is instructional content (an entrypoint file, typically a
+  SKILL.md), not a directly invokable function — so the adapters expose
+  *discovery* (search) and *loading instructions* (get_skill), never "run
+  the skill" as if it were an RPC call. Keeps every framework adapter to
+  exactly the same two capabilities, translated three different ways.
+
+**A real bug found and fixed during this item (documented in the new
+`jaas-sdk-conventions` SKILL.md, not just here):** `jaas-client`'s own
+real-API test extracts FastAPI `TestClient`'s internal `._transport` and
+wraps it in a plain `httpx.Client` for a fast in-process test — works
+fine there. It silently breaks once `httpx2` is present anywhere in the
+same venv (confirmed: `langgraph`/`langchain-core` pull it in
+transitively via `langsmith`) — `starlette.testclient` auto-detects
+`httpx2` and switches `TestClient`'s transport to an incompatible one,
+failing with a confusing low-level `assert isinstance(response.stream,
+SyncByteStream)` error with no obvious connection to the real cause.
+Fixed by running the real app on a real localhost port via
+`uvicorn.Server` in a background thread (`sdks/*/tests/_live_server.py`,
+one copy per package) instead of extracting `TestClient`'s transport —
+used in all three framework adapters' real-interop tests.
+
+**Does it break anything?** No — entirely new, independent packages; zero
+changes to `src/jaas_registry` or `jaas-ui`.
+**What it improves:** Replaces "hand-write REST calls" with `pip install
+jaas-langgraph` (etc.) for the three frameworks the roadmap named.
+**Impacted areas (actual):** new `sdks/jaas-client/`, `sdks/jaas-
+langgraph/`, `sdks/jaas-crewai/`, `sdks/jaas-autogen/` (each with its own
+`pyproject.toml`, `src/`, `tests/`, `README.md`); new `.claude/skills/
+jaas-sdk-conventions/SKILL.md`. Nothing under `src/jaas_registry` or
+`jaas-ui` touched.
 
 ### 4.2 — Billing, plans, and quota model · `jaas-registry`
 **What:** Net-new — no rate limiting or billing code exists anywhere

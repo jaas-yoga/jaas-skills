@@ -1,0 +1,41 @@
+[project]
+name = "jaas-langgraph"
+version = "0.1.0"
+description = "LangGraph tool adapter for the JaaS skill registry"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "jaas-client",
+    "langchain-core>=0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+    # Real interop tests -- confirms the adapter's output is a real,
+    # usable LangGraph tool, not just something shaped like one.
+    "langgraph>=0.2",
+    "jaas-registry",
+]
+
+[tool.uv.sources]
+jaas-client = { path = "../jaas-client", editable = true }
+jaas-registry = { path = "../../", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jaas_langgraph"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
