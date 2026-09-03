@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.monorepo-navigation
+name: Monorepo Navigation
+version: 1.0.0
+description: >-
+  Finds the right package/app boundary in a monorepo before making a
+  change - traces the workspace/build graph to know which packages a
+  change actually affects and which build/test commands to scope to.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - monorepo
+  - workspace
+  - build-graph
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

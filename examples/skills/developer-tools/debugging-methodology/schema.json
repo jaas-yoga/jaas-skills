@@ -1,0 +1,25 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "report": {
+        "type": "string",
+        "description": "The bug symptom, error message, or failing test description."
+      }
+    },
+    "required": ["report"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "rootCause": { "type": "string" },
+      "fix": { "type": "string" },
+      "regressionTestAdded": { "type": "boolean" },
+      "relatedInstancesFound": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "required": ["rootCause", "fix"]
+  }
+}

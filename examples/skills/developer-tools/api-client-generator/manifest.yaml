@@ -1,0 +1,22 @@
+apiVersion: v1
+id: jaas.devtools.api-client-generator
+name: API Client Generator
+version: 1.0.0
+description: >-
+  Generates a typed client for a REST or GraphQL API from its
+  OpenAPI/GraphQL schema - matching the target codebase's existing HTTP
+  client and error-handling conventions rather than introducing a new
+  pattern.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - api
+  - client-generation
+  - openapi
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

@@ -26,8 +26,8 @@ that's what this skill actually targets.
 ## Publishing (or re-publishing after an edit)
 
 ```bash
-uv run jaasctl validate examples/skills/github-workflow-assistant
-uv run jaasctl publish examples/skills/github-workflow-assistant
+uv run jaasctl validate examples/skills/github/github-workflow-assistant
+uv run jaasctl publish examples/skills/github/github-workflow-assistant
 ./run.sh restart   # the running API only re-scans storage at startup
 ```
 

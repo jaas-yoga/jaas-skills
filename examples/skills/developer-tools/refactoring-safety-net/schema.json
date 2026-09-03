@@ -1,0 +1,18 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "intent": { "type": "string", "description": "The refactor to perform, in plain language." }
+    },
+    "required": ["intent"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "stepsPerformed": { "type": "array", "items": { "type": "string" } },
+      "testsAddedForCoverage": { "type": "boolean" },
+      "finalSuiteStatus": { "type": "string" }
+    },
+    "required": ["stepsPerformed", "finalSuiteStatus"]
+  }
+}

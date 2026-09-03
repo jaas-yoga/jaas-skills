@@ -17,7 +17,7 @@ unrelated examples sitting next to each other.
 ## Publishing (or re-publishing after an edit)
 
 ```bash
-uv run jaasctl validate examples/skills/git-fundamentals
-uv run jaasctl publish examples/skills/git-fundamentals
+uv run jaasctl validate examples/skills/github/git-fundamentals
+uv run jaasctl publish examples/skills/github/git-fundamentals
 ./run.sh restart   # the running API only re-scans storage at startup
 ```

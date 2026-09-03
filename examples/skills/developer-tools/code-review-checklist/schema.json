@@ -1,0 +1,38 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "diff": {
+        "type": "string",
+        "description": "Unified diff text to review."
+      },
+      "prUrl": {
+        "type": "string",
+        "description": "URL of a pull request to fetch and review instead of a raw diff."
+      }
+    }
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "verdict": {
+        "type": "string",
+        "enum": ["approve", "approve-with-comments", "request-changes"]
+      },
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer" },
+            "severity": { "type": "string", "enum": ["blocking", "advisory"] },
+            "summary": { "type": "string" }
+          },
+          "required": ["file", "summary"]
+        }
+      }
+    },
+    "required": ["verdict", "findings"]
+  }
+}

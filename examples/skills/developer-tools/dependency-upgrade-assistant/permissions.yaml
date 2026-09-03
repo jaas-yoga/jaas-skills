@@ -1,0 +1,3 @@
+- fs:read
+- fs:write
+- network:egress

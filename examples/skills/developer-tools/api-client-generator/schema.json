@@ -1,0 +1,19 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "schemaPath": { "type": "string", "description": "Local path to an OpenAPI/GraphQL schema file." },
+      "schemaUrl": { "type": "string", "description": "URL to fetch the schema from, if not local." },
+      "targetLanguage": { "type": "string", "description": "Language of the client to generate, e.g. 'typescript' or 'python'." }
+    }
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "filesWritten": { "type": "array", "items": { "type": "string" } },
+      "operationCount": { "type": "integer" },
+      "ambiguities": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["filesWritten", "operationCount"]
+  }
+}

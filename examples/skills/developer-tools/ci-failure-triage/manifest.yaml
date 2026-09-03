@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.ci-failure-triage
+name: CI Failure Triage
+version: 1.0.0
+description: >-
+  Triages a failing CI run - distinguishes a real regression from
+  flake/infra noise by reading the actual failure output and re-run
+  history before deciding whether to fix, retry, or escalate.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - ci
+  - github-actions
+  - test-failures
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

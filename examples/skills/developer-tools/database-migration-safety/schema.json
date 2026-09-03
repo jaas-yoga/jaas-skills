@@ -1,0 +1,19 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "intent": { "type": "string", "description": "The schema change to make, in plain language." },
+      "table": { "type": "string", "description": "The target table name." }
+    },
+    "required": ["intent", "table"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "migrationSteps": { "type": "array", "items": { "type": "string" } },
+      "rollbackPossible": { "type": "boolean" },
+      "deploySequencingNotes": { "type": "string" }
+    },
+    "required": ["migrationSteps", "rollbackPossible"]
+  }
+}

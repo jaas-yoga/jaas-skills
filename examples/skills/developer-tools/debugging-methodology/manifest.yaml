@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.debugging-methodology
+name: Debugging Methodology
+version: 1.0.0
+description: >-
+  Systematic root-cause debugging for a reported bug - reproduces it
+  first, bisects to the smallest failing case, forms and tests one
+  hypothesis at a time, and fixes the root cause rather than the symptom.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - debugging
+  - root-cause
+  - troubleshooting
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

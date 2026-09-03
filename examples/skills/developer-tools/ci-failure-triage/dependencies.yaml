@@ -1,0 +1,2 @@
+- id: jaas.devtools.github-assistant
+  versionConstraint: ">=1.0.0,<2.0.0"

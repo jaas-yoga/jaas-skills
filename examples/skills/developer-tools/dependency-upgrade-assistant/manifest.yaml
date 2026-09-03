@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.dependency-upgrade-assistant
+name: Dependency Upgrade Assistant
+version: 1.0.0
+description: >-
+  Plans and executes a dependency version bump safely - reads changelogs
+  for breaking changes, runs the test suite before and after, and stages
+  the upgrade as its own commit separate from unrelated changes.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - dependencies
+  - upgrades
+  - semver
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

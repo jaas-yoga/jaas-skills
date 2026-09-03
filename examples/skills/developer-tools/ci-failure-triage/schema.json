@@ -1,0 +1,18 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "runUrl": { "type": "string", "description": "URL of the failing CI run." },
+      "commitSha": { "type": "string", "description": "Commit SHA to check CI status for, if not using runUrl." }
+    }
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "verdict": { "type": "string", "enum": ["regression", "flake", "infra"] },
+      "evidence": { "type": "string" },
+      "actionTaken": { "type": "string" }
+    },
+    "required": ["verdict", "evidence"]
+  }
+}

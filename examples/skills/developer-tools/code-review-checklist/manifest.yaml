@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.code-review-checklist
+name: Code Review Checklist
+version: 1.0.0
+description: >-
+  Structured review of a diff or pull request for correctness, security,
+  test coverage, and scope creep - flags real defects worth blocking on
+  rather than nitpicking style a linter already enforces.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - code-review
+  - pull-requests
+  - quality
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

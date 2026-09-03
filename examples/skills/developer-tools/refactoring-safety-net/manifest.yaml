@@ -1,0 +1,22 @@
+apiVersion: v1
+id: jaas.devtools.refactoring-safety-net
+name: Refactoring Safety Net
+version: 1.0.0
+description: >-
+  Makes a behavior-preserving refactor safely - establishes a passing
+  test baseline (writing characterization tests first if coverage is
+  thin), changes structure without changing behavior, and verifies the
+  baseline still passes at each step.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - refactoring
+  - tests
+  - safety
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

@@ -1,0 +1,21 @@
+apiVersion: v1
+id: jaas.devtools.database-migration-safety
+name: Database Migration Safety
+version: 1.0.0
+description: >-
+  Writes and reviews database schema migrations for backward
+  compatibility and safe rollout on a live table - additive-first
+  changes, backfills that don't lock, and a tested rollback path.
+owner:
+  team: jaas-registry-examples
+  contact: examples@jaas-registry.local
+entrypoint: SKILL.md
+category: developer-tools
+tags:
+  - database
+  - migrations
+  - schema
+  - developer-tools
+runtime:
+  - family: prompt
+    versionRange: ">=1.0.0,<2.0.0"

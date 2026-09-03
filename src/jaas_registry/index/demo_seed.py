@@ -59,8 +59,8 @@ _OWNER_TENANT_ID = personal_tenant_id(_OWNER_USER_ID)
 # narrows it into "My Skills" specifically (vs. team-runbook below, which
 # has no owner_user and so only ever shows under "My Tenant").
 _SEED_PACKAGES: tuple[tuple[str, str, str, str], ...] = (
-    ("git-fundamentals", "jaas.devtools.git-fundamentals", "", ""),
-    ("github-workflow-assistant", "jaas.devtools.github-assistant", "", ""),
+    ("github/git-fundamentals", "jaas.devtools.git-fundamentals", "", ""),
+    ("github/github-workflow-assistant", "jaas.devtools.github-assistant", "", ""),
     ("personal-notes", "jaas.demo.personal-notes", _OWNER_USER_ID, _OWNER_TENANT_ID),
     ("team-runbook", "jaas.demo.team-runbook", "", _OWNER_TENANT_ID),
 )

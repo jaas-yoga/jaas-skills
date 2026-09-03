@@ -1,0 +1,18 @@
+{
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "task": { "type": "string", "description": "What to do, in plain language." }
+    },
+    "required": ["task"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "ownerPackage": { "type": "string" },
+      "affectedPackages": { "type": "array", "items": { "type": "string" } },
+      "scopedCommands": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["ownerPackage", "affectedPackages"]
+  }
+}
