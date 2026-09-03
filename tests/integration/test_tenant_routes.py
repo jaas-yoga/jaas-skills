@@ -367,7 +367,7 @@ class TestCustomGuardrailRules:
 
         put_resp = client.put(
             f"/api/v1/tenants/{tenant['id']}/custom-guardrails/no-todo",
-            json=_custom_rule_body(),
+            json=_custom_rule_body(version="1.0.0"),
             headers=_auth(admin_token),
         )
         assert put_resp.status_code == 200, put_resp.text
@@ -422,7 +422,7 @@ class TestCustomGuardrailRules:
 
         validate_resp = client.post(
             f"/api/v1/tenants/{tenant['id']}/custom-guardrails/validate",
-            json=_custom_rule_body(),
+            json=_custom_rule_body(version="1.0.0"),
             headers=_auth(bob_token),
         )
         assert validate_resp.status_code == 200
@@ -430,7 +430,7 @@ class TestCustomGuardrailRules:
 
         put_resp = client.put(
             f"/api/v1/tenants/{tenant['id']}/custom-guardrails/no-todo",
-            json=_custom_rule_body(),
+            json=_custom_rule_body(version="1.0.0"),
             headers=_auth(bob_token),
         )
         assert put_resp.status_code == 403
@@ -461,7 +461,7 @@ class TestCustomGuardrailRules:
 
         resp = client.put(
             f"/api/v1/tenants/{tenant['id']}/custom-guardrails/no-todo",
-            json=_custom_rule_body(),
+            json=_custom_rule_body(version="1.0.0"),
             headers=_auth(admin_token),
         )
         assert resp.status_code == 400
@@ -479,6 +479,234 @@ class TestCustomGuardrailRules:
         )
         assert resp.status_code == 404
         assert resp.json()["code"] == "TENANT_NOT_FOUND"
+
+
+class TestCustomGuardrailRuleDrafts:
+    def test_member_can_create_and_edit_a_draft(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        bob_token = _sign_in(client, "bob-token")
+        client.post(
+            f"/api/v1/tenants/{tenant['id']}/members",
+            json={"email": "bob@example.com", "role": "member"},
+            headers=_auth(admin_token),
+        )
+
+        create_resp = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(bob_token),
+        )
+        assert create_resp.status_code == 200, create_resp.text
+        draft = create_resp.json()
+        assert draft["slug"] == ""
+        assert draft["version"] == "1.0.0"
+
+        update_resp = client.put(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            json=_custom_rule_body(version="1.0.0"),
+            headers=_auth(bob_token),
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["slug"] == "no-todo"
+
+        get_resp = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(bob_token),
+        )
+        assert get_resp.json()["name"] == "No TODO"
+
+        list_resp = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts", headers=_auth(bob_token)
+        )
+        assert [d["id"] for d in list_resp.json()] == [draft["id"]]
+
+    def test_validate_draft_uses_its_saved_content(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        draft = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(admin_token),
+        ).json()
+        client.put(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            json=_custom_rule_body(version="1.0.0"),
+            headers=_auth(admin_token),
+        )
+
+        resp = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}/validate",
+            headers=_auth(admin_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"valid": True, "error": None}
+
+    def test_member_cannot_publish_only_admin_can(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        bob_token = _sign_in(client, "bob-token")
+        client.post(
+            f"/api/v1/tenants/{tenant['id']}/members",
+            json={"email": "bob@example.com", "role": "member"},
+            headers=_auth(admin_token),
+        )
+        draft = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(bob_token),
+        ).json()
+        client.put(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            json=_custom_rule_body(version="1.0.0"),
+            headers=_auth(bob_token),
+        )
+
+        member_publish = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}/publish",
+            headers=_auth(bob_token),
+        )
+        assert member_publish.status_code == 403
+
+        admin_publish = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}/publish",
+            headers=_auth(admin_token),
+        )
+        assert admin_publish.status_code == 200, admin_publish.text
+        assert admin_publish.json()["slug"] == "no-todo"
+        assert admin_publish.json()["version"] == "1.0.0"
+
+        # publishing deletes the draft, matching skill drafts' publish_draft
+        get_after = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(admin_token),
+        )
+        assert get_after.status_code == 404
+        assert get_after.json()["code"] == "CUSTOM_GUARDRAIL_DRAFT_NOT_FOUND"
+
+        # the rule really is live now, findable through the normal list
+        list_resp = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails", headers=_auth(admin_token)
+        )
+        assert [r["slug"] for r in list_resp.json()] == ["no-todo"]
+
+    def test_publish_rejects_an_invalid_draft(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        draft = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(admin_token),
+        ).json()
+        client.put(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            json=_custom_rule_body(version="1.0.0"),
+            headers=_auth(admin_token),
+        )
+        client.app.state.guardrails_client._validate_error = "bad kind"
+
+        resp = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}/publish",
+            headers=_auth(admin_token),
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_CUSTOM_GUARDRAIL"
+
+        # rejected publish leaves the draft in place — nothing to recover
+        get_resp = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(admin_token),
+        )
+        assert get_resp.status_code == 200
+
+    def test_fork_from_slug_copies_the_published_rule(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        client.put(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/no-todo",
+            json=_custom_rule_body(version="1.0.0"),
+            headers=_auth(admin_token),
+        )
+
+        draft = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={"forkFromSlug": "no-todo"},
+            headers=_auth(admin_token),
+        ).json()
+
+        assert draft["slug"] == "no-todo"
+        assert draft["name"] == "No TODO"
+        assert draft["forkedFromVersion"] == "1.0.0"
+        assert draft["version"] == "1.0.1"
+
+    def test_fork_from_unknown_slug_is_404(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+
+        resp = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={"forkFromSlug": "does-not-exist"},
+            headers=_auth(admin_token),
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "CUSTOM_GUARDRAIL_NOT_FOUND"
+
+    def test_delete_draft(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        draft = client.post(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(admin_token),
+        ).json()
+
+        delete_resp = client.delete(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(admin_token),
+        )
+        assert delete_resp.status_code == 204
+
+        get_resp = client.get(
+            f"/api/v1/tenants/{tenant['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(admin_token),
+        )
+        assert get_resp.status_code == 404
+
+    def test_a_tenants_draft_is_invisible_to_a_different_tenant(self, client):
+        admin_token = _sign_in(client, "alice-token")
+        tenant_a = client.post(
+            "/api/v1/tenants", json={"name": "Acme"}, headers=_auth(admin_token)
+        ).json()
+        outsider_token = _sign_in(client, "outsider-token")
+        tenant_b = client.post(
+            "/api/v1/tenants", json={"name": "Globex"}, headers=_auth(outsider_token)
+        ).json()
+        draft = client.post(
+            f"/api/v1/tenants/{tenant_a['id']}/custom-guardrails/drafts",
+            json={},
+            headers=_auth(admin_token),
+        ).json()
+
+        resp = client.get(
+            f"/api/v1/tenants/{tenant_b['id']}/custom-guardrails/drafts/{draft['id']}",
+            headers=_auth(outsider_token),
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "CUSTOM_GUARDRAIL_DRAFT_NOT_FOUND"
 
 
 class TestRepoLinks:

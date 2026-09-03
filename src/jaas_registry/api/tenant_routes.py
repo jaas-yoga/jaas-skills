@@ -14,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from jaas_registry.api.deps import (
     AuthorizerDep,
+    CustomGuardrailRuleDraftStoreDep,
     CustomGuardrailRuleStoreDep,
     GuardrailCatalogDep,
     GuardrailPolicyStoreDep,
@@ -27,7 +28,9 @@ from jaas_registry.api.deps import (
     UserStoreDep,
 )
 from jaas_registry.api.schemas import (
+    CreateCustomGuardrailRuleDraftRequest,
     CreateTenantRequest,
+    CustomGuardrailRuleDraftResponse,
     CustomGuardrailRuleRequest,
     CustomGuardrailRuleResponse,
     InviteMemberRequest,
@@ -38,6 +41,7 @@ from jaas_registry.api.schemas import (
     TenantGuardrailPolicyRequest,
     TenantGuardrailPolicyResponse,
     TenantMembershipResponse,
+    UpdateCustomGuardrailRuleDraftRequest,
     UpdateRepoLinkRequest,
     ValidateCustomGuardrailRuleResponse,
 )
@@ -226,6 +230,27 @@ def _rule_to_response(rule) -> CustomGuardrailRuleResponse:
         config=rule.config,
         createdBy=rule.created_by,
         createdAt=rule.created_at,
+        version=rule.version,
+    )
+
+
+def _draft_to_response(draft) -> CustomGuardrailRuleDraftResponse:
+    return CustomGuardrailRuleDraftResponse(
+        id=draft.id,
+        tenantId=draft.tenant_id,
+        slug=draft.slug,
+        name=draft.name,
+        description=draft.description,
+        category=draft.category,
+        severity=draft.severity,
+        standardRef=draft.standard_ref,
+        kind=draft.kind,
+        config=draft.config,
+        version=draft.version,
+        forkedFromVersion=draft.forked_from_version,
+        createdBy=draft.created_by,
+        createdAt=draft.created_at,
+        updatedAt=draft.updated_at,
     )
 
 
@@ -325,6 +350,7 @@ def put_custom_guardrail_rule(
         kind=body.kind,
         config=body.config,
         created_by=caller.user_id or "",
+        version=body.version,
     )
     FileAuditSink(settings.audit_dir).emit_custom_guardrail_change(
         new_custom_guardrail_rule_event(
@@ -363,6 +389,239 @@ def delete_custom_guardrail_rule(
             action="deleted",
         )
     )
+
+
+@router.post(
+    "/{tenant_id}/custom-guardrails/drafts", response_model=CustomGuardrailRuleDraftResponse
+)
+def create_custom_guardrail_rule_draft(
+    tenant_id: str,
+    body: CreateCustomGuardrailRuleDraftRequest,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    custom_rule_store: CustomGuardrailRuleStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> CustomGuardrailRuleDraftResponse:
+    """Any member may draft — same posture as skill drafts. `forkFromSlug`
+    mirrors a skill's "New Version": editing an already-published rule
+    starts from a draft copy rather than mutating the immutable published
+    version in place."""
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+
+    fork_from = None
+    if body.forkFromSlug is not None:
+        fork_from = custom_rule_store.get(tenant_id, body.forkFromSlug)
+        if fork_from is None:
+            raise JaasError(
+                ErrorCode.CUSTOM_GUARDRAIL_NOT_FOUND,
+                f"custom guardrail rule '{body.forkFromSlug}' not found",
+            )
+
+    draft = draft_store.create(
+        tenant_id=tenant_id, created_by=caller.user_id or "", fork_from=fork_from
+    )
+    return _draft_to_response(draft)
+
+
+@router.get(
+    "/{tenant_id}/custom-guardrails/drafts",
+    response_model=list[CustomGuardrailRuleDraftResponse],
+)
+def list_custom_guardrail_rule_drafts(
+    tenant_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> list[CustomGuardrailRuleDraftResponse]:
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+    return [_draft_to_response(d) for d in draft_store.list_for_tenant(tenant_id)]
+
+
+def _require_draft(
+    draft_store: CustomGuardrailRuleDraftStoreDep, tenant_id: str, draft_id: str
+):
+    draft = draft_store.get(draft_id)
+    if draft is None or draft.tenant_id != tenant_id:
+        # 404 either way — a draft id that belongs to a *different* tenant
+        # must not confirm its own existence, same "don't leak" posture as
+        # a private skill.
+        raise JaasError(
+            ErrorCode.CUSTOM_GUARDRAIL_DRAFT_NOT_FOUND, f"draft '{draft_id}' not found"
+        )
+    return draft
+
+
+@router.get(
+    "/{tenant_id}/custom-guardrails/drafts/{draft_id}",
+    response_model=CustomGuardrailRuleDraftResponse,
+)
+def get_custom_guardrail_rule_draft(
+    tenant_id: str,
+    draft_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> CustomGuardrailRuleDraftResponse:
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+    return _draft_to_response(_require_draft(draft_store, tenant_id, draft_id))
+
+
+@router.put(
+    "/{tenant_id}/custom-guardrails/drafts/{draft_id}",
+    response_model=CustomGuardrailRuleDraftResponse,
+)
+def update_custom_guardrail_rule_draft(
+    tenant_id: str,
+    draft_id: str,
+    body: UpdateCustomGuardrailRuleDraftRequest,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> CustomGuardrailRuleDraftResponse:
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+    _require_draft(draft_store, tenant_id, draft_id)
+
+    updated = draft_store.update(
+        draft_id,
+        slug=body.slug,
+        name=body.name,
+        description=body.description,
+        category=body.category,
+        severity=body.severity,
+        standard_ref=body.standardRef,
+        kind=body.kind,
+        config=body.config,
+        version=body.version,
+    )
+    return _draft_to_response(updated)
+
+
+@router.delete("/{tenant_id}/custom-guardrails/drafts/{draft_id}", status_code=204)
+def delete_custom_guardrail_rule_draft(
+    tenant_id: str,
+    draft_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> None:
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+    _require_draft(draft_store, tenant_id, draft_id)
+    draft_store.delete(draft_id)
+
+
+@router.post(
+    "/{tenant_id}/custom-guardrails/drafts/{draft_id}/validate",
+    response_model=ValidateCustomGuardrailRuleResponse,
+)
+def validate_custom_guardrail_rule_draft(
+    tenant_id: str,
+    draft_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    guardrails_client: GuardrailsClientDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> ValidateCustomGuardrailRuleResponse:
+    """Same dry-run check as the standalone .../validate endpoint, just
+    against this draft's current saved content instead of an ad-hoc body —
+    lets the draft screen show live "Valid" feedback the same way the
+    skill draft workspace's Validate button does."""
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_membership(membership_store, tenant_id, caller)
+    draft = _require_draft(draft_store, tenant_id, draft_id)
+
+    error = guardrails_client.validate_rule(
+        id=f"custom:{tenant_id}:{draft.slug}",
+        name=draft.name,
+        description=draft.description,
+        category=draft.category,
+        severity=draft.severity,
+        standard_ref=draft.standard_ref,
+        kind=draft.kind,
+        config=draft.config,
+    )
+    return ValidateCustomGuardrailRuleResponse(valid=error is None, error=error)
+
+
+@router.post(
+    "/{tenant_id}/custom-guardrails/drafts/{draft_id}/publish",
+    response_model=CustomGuardrailRuleResponse,
+)
+def publish_custom_guardrail_rule_draft(
+    tenant_id: str,
+    draft_id: str,
+    settings: SettingsDep,
+    authorizer: AuthorizerDep,
+    membership_store: MembershipStoreDep,
+    custom_rule_store: CustomGuardrailRuleStoreDep,
+    draft_store: CustomGuardrailRuleDraftStoreDep,
+    guardrails_client: GuardrailsClientDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> CustomGuardrailRuleResponse:
+    """Admin-only, same tier as the direct PUT endpoint this ultimately
+    calls into — any member can draft and validate, but activating a rule
+    tenant-wide (affecting every future publish it's applied to) is an
+    admin decision. Validation is mandatory here, never opt-out, mirroring
+    a skill publish's non-skippable guardrail scan — a draft's own earlier
+    /validate call is only ever advisory feedback, not a caching of this
+    check."""
+    caller = _require_caller(settings=settings, authorizer=authorizer, credentials=credentials)
+    _require_admin(membership_store, tenant_id, caller)
+    draft = _require_draft(draft_store, tenant_id, draft_id)
+
+    error = guardrails_client.validate_rule(
+        id=f"custom:{tenant_id}:{draft.slug}",
+        name=draft.name,
+        description=draft.description,
+        category=draft.category,
+        severity=draft.severity,
+        standard_ref=draft.standard_ref,
+        kind=draft.kind,
+        config=draft.config,
+    )
+    if error is not None:
+        raise JaasError(ErrorCode.INVALID_CUSTOM_GUARDRAIL, error)
+
+    is_new = custom_rule_store.get(tenant_id, draft.slug) is None
+    rule = custom_rule_store.put(
+        tenant_id=tenant_id,
+        slug=draft.slug,
+        name=draft.name,
+        description=draft.description,
+        category=draft.category,
+        severity=draft.severity,
+        standard_ref=draft.standard_ref,
+        kind=draft.kind,
+        config=draft.config,
+        created_by=caller.user_id or "",
+        version=draft.version,
+    )
+    FileAuditSink(settings.audit_dir).emit_custom_guardrail_change(
+        new_custom_guardrail_rule_event(
+            actor=caller.user_id or "",
+            tenant_id=tenant_id,
+            rule_id=rule.id,
+            action="created" if is_new else "published",
+        )
+    )
+    draft_store.delete(draft.id)
+    return _rule_to_response(rule)
 
 
 def _repo_link_to_response(link) -> RepoLinkResponse:

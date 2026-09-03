@@ -23,6 +23,7 @@ from jaas_registry.authz.base import Authorizer
 from jaas_registry.common.config import Settings
 from jaas_registry.drafts.store import DraftStore
 from jaas_registry.guardrails.client import GuardrailsClient
+from jaas_registry.guardrails.custom_rule_drafts import CustomGuardrailRuleDraftStore
 from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
 from jaas_registry.guardrails.models import GuardrailDefinition
 from jaas_registry.guardrails.policy import GuardrailPolicyStore
@@ -100,6 +101,10 @@ def get_custom_guardrail_rule_store(request: Request) -> CustomGuardrailRuleStor
     return request.app.state.custom_guardrail_rule_store
 
 
+def get_custom_guardrail_rule_draft_store(request: Request) -> CustomGuardrailRuleDraftStore:
+    return request.app.state.custom_guardrail_rule_draft_store
+
+
 def get_repo_link_store(request: Request) -> RepoLinkStore:
     return request.app.state.repo_link_store
 
@@ -170,6 +175,9 @@ PatStoreDep = Annotated[PatStore, Depends(get_pat_store)]
 GuardrailPolicyStoreDep = Annotated[GuardrailPolicyStore, Depends(get_guardrail_policy_store)]
 CustomGuardrailRuleStoreDep = Annotated[
     CustomGuardrailRuleStore, Depends(get_custom_guardrail_rule_store)
+]
+CustomGuardrailRuleDraftStoreDep = Annotated[
+    CustomGuardrailRuleDraftStore, Depends(get_custom_guardrail_rule_draft_store)
 ]
 RepoLinkStoreDep = Annotated[RepoLinkStore, Depends(get_repo_link_store)]
 GitHubConnectionStoreDep = Annotated[GitHubConnectionStore, Depends(get_github_connection_store)]

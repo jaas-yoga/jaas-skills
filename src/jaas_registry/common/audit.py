@@ -72,7 +72,7 @@ class CustomGuardrailRuleAuditEvent:
     actor: str
     tenant_id: str
     rule_id: str
-    action: str  # "created" | "updated" | "deleted"
+    action: str  # "created" | "updated" | "deleted" | "published"
     timestamp: str
 
 

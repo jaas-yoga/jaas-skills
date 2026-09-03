@@ -346,6 +346,9 @@ class CustomGuardrailRuleRequest(BaseModel):
     standardRef: str = ""
     kind: str
     config: dict = {}
+    # Optional so `jaasctl guardrails push` (predates versioning) keeps
+    # working unchanged — every rule published without one gets "1.0.0".
+    version: str = "1.0.0"
 
 
 class CustomGuardrailRuleResponse(BaseModel):
@@ -361,11 +364,48 @@ class CustomGuardrailRuleResponse(BaseModel):
     config: dict
     createdBy: str
     createdAt: str
+    version: str
 
 
 class ValidateCustomGuardrailRuleResponse(BaseModel):
     valid: bool
     error: str | None = None
+
+
+class CreateCustomGuardrailRuleDraftRequest(BaseModel):
+    # Editing an already-published rule forks it into a draft, the same
+    # shape as a skill's "New Version" — omit for a brand-new rule.
+    forkFromSlug: str | None = None
+
+
+class CustomGuardrailRuleDraftResponse(BaseModel):
+    id: str
+    tenantId: str
+    slug: str
+    name: str
+    description: str
+    category: str
+    severity: str
+    standardRef: str
+    kind: str
+    config: dict
+    version: str
+    forkedFromVersion: str | None
+    createdBy: str
+    createdAt: str
+    updatedAt: str
+
+
+class UpdateCustomGuardrailRuleDraftRequest(BaseModel):
+    slug: str
+    name: str
+    description: str = ""
+    category: str
+    severity: str
+    standardRef: str = ""
+    kind: str
+    config: dict = {}
+    version: str
 
 
 class RepoLinkRequest(BaseModel):

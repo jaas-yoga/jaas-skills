@@ -38,6 +38,10 @@ class CustomGuardrailRule:
     config: dict
     created_by: str
     created_at: str
+    # SemVer, same convention as a skill's manifest `version` — "1.0.0" is
+    # the default for every rule published before this field existed
+    # (dataclass default, not written by any pre-existing on-disk record).
+    version: str = "1.0.0"
 
 
 def make_id(tenant_id: str, slug: str) -> str:
@@ -66,6 +70,12 @@ class CustomGuardrailRuleStore:
     def _path(self, tenant_id: str, slug: str) -> Path:
         return self._dir / f"{tenant_id}__{slug}.json"
 
+    def _version_path(self, tenant_id: str, slug: str, version: str) -> Path:
+        # Separate "versions" subdirectory (not just a differently-named
+        # file alongside _path()'s current-pointer file) so list_for_tenant's
+        # glob keeps matching exactly one file per rule, unchanged.
+        return self._dir / "versions" / f"{tenant_id}__{slug}__{version}.json"
+
     def get(self, tenant_id: str, slug: str) -> CustomGuardrailRule | None:
         path = self._path(tenant_id, slug)
         if not path.exists():
@@ -73,11 +83,28 @@ class CustomGuardrailRuleStore:
         return _from_dict(json.loads(path.read_text()))
 
     def list_for_tenant(self, tenant_id: str) -> list[CustomGuardrailRule]:
+        # Non-recursive glob — never descends into versions/, so this only
+        # ever matches the one current-pointer file per rule.
         rules = [
             _from_dict(json.loads(path.read_text()))
             for path in self._dir.glob(f"{tenant_id}__*.json")
         ]
         return sorted(rules, key=lambda r: r.slug)
+
+    def list_versions(self, tenant_id: str, slug: str) -> list[CustomGuardrailRule]:
+        """Every version ever published for this rule, oldest first —
+        immutable snapshots, unaffected by later publishes. Plain string
+        sort (same caveat as index/store.py's list_versions: fine for
+        display, not for "highest SemVer" — this rule set is small enough
+        that nothing here needs that)."""
+        versions_dir = self._dir / "versions"
+        if not versions_dir.is_dir():
+            return []
+        rules = [
+            _from_dict(json.loads(path.read_text()))
+            for path in versions_dir.glob(f"{tenant_id}__{slug}__*.json")
+        ]
+        return sorted(rules, key=lambda r: r.version)
 
     def put(
         self,
@@ -92,6 +119,7 @@ class CustomGuardrailRuleStore:
         kind: str,
         config: dict,
         created_by: str,
+        version: str = "1.0.0",
     ) -> CustomGuardrailRule:
         validate_slug(slug)
         is_new = self.get(tenant_id, slug) is None
@@ -114,8 +142,23 @@ class CustomGuardrailRuleStore:
             config=config,
             created_by=created_by,
             created_at=datetime.now(UTC).isoformat(),
+            version=version,
         )
-        self._path(tenant_id, slug).write_text(json.dumps(asdict(rule)))
+        serialized = json.dumps(asdict(rule))
+
+        # Not a hard immutability guarantee like a skill's published
+        # artifact — `jaasctl guardrails push` (predates versioning
+        # entirely) legitimately re-puts the same slug at the same
+        # implicit "1.0.0" version with different content on every push,
+        # and that must keep working unchanged. The version snapshot
+        # simply reflects whatever was last published *at that version
+        # string* — real history only accumulates when a caller (the
+        # draft/publish UI flow) actually advances `version` itself.
+        version_path = self._version_path(tenant_id, slug, version)
+        version_path.parent.mkdir(parents=True, exist_ok=True)
+        version_path.write_text(serialized)
+
+        self._path(tenant_id, slug).write_text(serialized)
         return rule
 
     def delete(self, tenant_id: str, slug: str) -> bool:
@@ -123,6 +166,8 @@ class CustomGuardrailRuleStore:
         if not path.exists():
             return False
         path.unlink()
+        for version_path in (self._dir / "versions").glob(f"{tenant_id}__{slug}__*.json"):
+            version_path.unlink()
         return True
 
 

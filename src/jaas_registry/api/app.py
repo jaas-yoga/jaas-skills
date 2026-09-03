@@ -37,6 +37,7 @@ from jaas_registry.authz.base import AllowAllAuthorizer, Authorizer
 from jaas_registry.common.config import Settings
 from jaas_registry.drafts.store import DraftStore
 from jaas_registry.guardrails.client import GuardrailsClient, HttpGuardrailsClient
+from jaas_registry.guardrails.custom_rule_drafts import CustomGuardrailRuleDraftStore
 from jaas_registry.guardrails.custom_rules import CustomGuardrailRuleStore
 from jaas_registry.guardrails.policy import GuardrailPolicyStore
 from jaas_registry.index.background_sync import reconcile_periodically
@@ -66,6 +67,7 @@ def create_app(
     pat_store: PatStore | None = None,
     guardrail_policy_store: GuardrailPolicyStore | None = None,
     custom_guardrail_rule_store: CustomGuardrailRuleStore | None = None,
+    custom_guardrail_rule_draft_store: CustomGuardrailRuleDraftStore | None = None,
     repo_link_store: RepoLinkStore | None = None,
     github_connection_store: GitHubConnectionStore | None = None,
     github_oauth_app_store: GitHubOAuthAppStore | None = None,
@@ -147,6 +149,9 @@ def create_app(
     )
     app.state.custom_guardrail_rule_store = custom_guardrail_rule_store or (
         CustomGuardrailRuleStore(settings.policy_dir)
+    )
+    app.state.custom_guardrail_rule_draft_store = custom_guardrail_rule_draft_store or (
+        CustomGuardrailRuleDraftStore(settings.policy_dir)
     )
     app.state.repo_link_store = repo_link_store or RepoLinkStore(settings.policy_dir)
     app.state.github_connection_store = github_connection_store or GitHubConnectionStore(
