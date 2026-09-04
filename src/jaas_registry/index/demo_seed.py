@@ -63,6 +63,57 @@ _SEED_PACKAGES: tuple[tuple[str, str, str, str], ...] = (
     ("github/github-workflow-assistant", "jaas.devtools.github-assistant", "", ""),
     ("personal-notes", "jaas.demo.personal-notes", _OWNER_USER_ID, _OWNER_TENANT_ID),
     ("team-runbook", "jaas.demo.team-runbook", "", _OWNER_TENANT_ID),
+    # The rest of the developer-tools category (EXAMPLE_SKILLS.md's "additional"
+    # table) — same public, unowned shape as git-fundamentals/github-workflow-
+    # assistant above. ci-failure-triage declares a dependency on
+    # jaas.devtools.github-assistant in its dependencies.yaml, but publish_skill()
+    # never validates dependency existence when existing_dependency_graph is
+    # None (seed_demo_skills below doesn't pass one), so seed order here doesn't
+    # matter functionally — kept after github-workflow-assistant anyway for
+    # readability.
+    (
+        "developer-tools/code-review-checklist",
+        "jaas.devtools.code-review-checklist",
+        "",
+        "",
+    ),
+    (
+        "developer-tools/dependency-upgrade-assistant",
+        "jaas.devtools.dependency-upgrade-assistant",
+        "",
+        "",
+    ),
+    (
+        "developer-tools/debugging-methodology",
+        "jaas.devtools.debugging-methodology",
+        "",
+        "",
+    ),
+    (
+        "developer-tools/api-client-generator",
+        "jaas.devtools.api-client-generator",
+        "",
+        "",
+    ),
+    (
+        "developer-tools/database-migration-safety",
+        "jaas.devtools.database-migration-safety",
+        "",
+        "",
+    ),
+    (
+        "developer-tools/monorepo-navigation",
+        "jaas.devtools.monorepo-navigation",
+        "",
+        "",
+    ),
+    ("developer-tools/ci-failure-triage", "jaas.devtools.ci-failure-triage", "", ""),
+    (
+        "developer-tools/refactoring-safety-net",
+        "jaas.devtools.refactoring-safety-net",
+        "",
+        "",
+    ),
 )
 
 
